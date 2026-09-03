@@ -45,13 +45,14 @@ class Card:
 
 
 class Deck:
-    def __init__(self):
+    def __init__(self, rng=None):
+        self.rng = rng or random.Random()
         self.cards = []
         self.reset()
 
     def reset(self):
         self.cards = [Card(rank, suit) for suit in Suit for rank in Rank]
-        random.shuffle(self.cards)
+        self.rng.shuffle(self.cards)
 
     def draw(self, count):
         drawn = []

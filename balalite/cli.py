@@ -23,6 +23,15 @@ def _parse_indices(tokens, hand_len, max_count=5):
     return sorted(n - 1 for n in nums)
 
 
+def _parse_single_index(args, label="번호"):
+    if not args:
+        raise InputError(f"{label}를 입력하세요.")
+    try:
+        return int(args[0]) - 1
+    except ValueError:
+        raise InputError(f"{label}는 숫자로 입력하세요.")
+
+
 def _pause():
     input(f"{ui.DIM}(엔터를 눌러 계속){ui.RESET}")
 
@@ -36,10 +45,20 @@ def _handle_blind_command(game, cmd, args):
             raise InputError("버리기 횟수를 모두 사용했습니다.")
         indices = _parse_indices(args, len(game.hand))
         game.discard_cards(indices)
+    elif cmd in ("u", "use"):
+        n = _parse_single_index(args, "소모품 번호")
+        message = game.use_consumable(n)
+        print(message)
+        _pause()
+    elif cmd in ("x", "sell"):
+        n = _parse_single_index(args, "조커 번호")
+        message = game.sell_joker(n)
+        print(message)
+        _pause()
     elif cmd in ("s", "sort"):
         game.sort_hand("suit" if game.sort_mode == "rank" else "rank")
-    elif cmd in ("j", "jokers"):
-        ui.render_joker_details(game.jokers)
+    elif cmd in ("j", "jokers", "inventory"):
+        ui.render_inventory(game)
         _pause()
     elif cmd in ("h", "help"):
         ui.render_help("blind")
@@ -52,17 +71,17 @@ def _handle_blind_command(game, cmd, args):
 
 def _handle_shop_command(game, cmd, args):
     if cmd in ("b", "buy"):
-        if not args:
-            raise InputError("구매할 조커 번호를 입력하세요 (예: b 1)")
-        try:
-            n = int(args[0])
-        except ValueError:
-            raise InputError("조커 번호는 숫자로 입력하세요.")
-        game.buy_joker(n - 1)
+        n = _parse_single_index(args, "구매할 상품 번호")
+        game.buy_offer(n)
+    elif cmd in ("r", "reroll"):
+        game.reroll_shop()
+    elif cmd in ("x", "sell"):
+        n = _parse_single_index(args, "조커 번호")
+        game.shop_message = game.sell_joker(n)
     elif cmd in ("c", "continue"):
         game.continue_from_shop()
-    elif cmd in ("j", "jokers"):
-        ui.render_joker_details(game.jokers)
+    elif cmd in ("j", "jokers", "inventory"):
+        ui.render_inventory(game)
         _pause()
     elif cmd in ("h", "help"):
         ui.render_help("shop")
@@ -112,16 +131,23 @@ def _run_loop(game):
     ui.render_end_screen(game)
 
 
-def main():
-    ui.render_title()
+def _prompt_seed():
     try:
-        choice = input("새 게임을 시작하려면 엔터, 종료하려면 q: ").strip().lower()
+        raw = input("새 게임을 시작하려면 엔터, 시드를 정해서 시작하려면 시드 문자열, 종료하려면 q: ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
+        return "quit"
+    if raw.lower() == "q":
+        return "quit"
+    return raw or None
+
+
+def main():
+    ui.render_title()
+    seed = _prompt_seed()
+    if seed == "quit":
         return
-    if choice == "q":
-        return
-    game = GameState()
+    game = GameState(seed=seed)
     _run_loop(game)
 
 
