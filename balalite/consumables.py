@@ -3,8 +3,10 @@ from typing import Callable, List, Optional
 
 from .scoring import HandType
 
-# 족보 레벨당 (칩 보너스, 배수 보너스). 하이 카드/스트레이트 플러시는 룬 대상에서 제외.
+# 족보 레벨당 (칩 보너스, 배수 보너스). 발라트로의 "행성 카드"에 해당하는 시스템으로,
+# 표준 9족보 + 와일드 강화로만 달성 가능한 히든 3족보까지 총 12종을 커버한다.
 LEVEL_BONUS = {
+    HandType.HIGH_CARD: (5, 1),
     HandType.PAIR: (10, 1),
     HandType.TWO_PAIR: (15, 1),
     HandType.THREE_OF_A_KIND: (20, 2),
@@ -13,13 +15,16 @@ LEVEL_BONUS = {
     HandType.FULL_HOUSE: (25, 2),
     HandType.FOUR_OF_A_KIND: (30, 3),
     HandType.STRAIGHT_FLUSH: (40, 4),
+    HandType.FIVE_OF_A_KIND: (35, 4),
+    HandType.FLUSH_HOUSE: (40, 5),
+    HandType.FLUSH_FIVE: (50, 6),
 }
 
-# 카드 강화 종류와 설명 (게임플레이 로직은 game.py의 _score_cards에서 처리)
+# 카드 강화 종류와 설명 (게임플레이 로직은 game.py의 _score_cards와 scoring.py에서 처리)
 ENHANCEMENT_DESCRIPTIONS = {
     "bonus": "이 카드가 점수에 포함되면 +30 칩",
     "mult": "이 카드가 점수에 포함되면 +4 Mult",
-    "wild": "플러시 판정 시 모든 무늬로 취급",
+    "wild": "플러시 판정 시 모든 무늬로 취급되며, 나머지 카드가 전부 같은 랭크면 파이브 오브 어 카인드 등 히든 조합의 마지막 한 장을 채워줌",
     "glass": "이 카드가 점수에 포함되면 Mult x2, 이후 25% 확률로 파괴됨",
 }
 

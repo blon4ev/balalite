@@ -2,7 +2,6 @@ from dataclasses import dataclass
 from typing import Callable, List
 
 from .cards import Rank, Suit
-from .consumables import LEVEL_BONUS
 from .scoring import HandType
 
 RARITY_WEIGHT = {
@@ -280,6 +279,13 @@ RANK_PRESENT_JOKERS: List[Joker] = [
           _rank_present_bonus(Rank.TEN, 12, "chips"), "common"),
 ]
 
+# 학자 조커는 룬이 처음 추가됐던 8개 표준 족보만 대상으로 한다 (히든 족보용 룬을
+# 나중에 추가해도 조커 100종 구성이 흔들리지 않도록 고정 목록을 쓴다).
+_SCHOLAR_HAND_TYPES = [
+    HandType.PAIR, HandType.TWO_PAIR, HandType.THREE_OF_A_KIND, HandType.STRAIGHT,
+    HandType.FLUSH, HandType.FULL_HOUSE, HandType.FOUR_OF_A_KIND, HandType.STRAIGHT_FLUSH,
+]
+
 HAND_TYPE_SCHOLAR_JOKERS: List[Joker] = [
     Joker(
         f"scholar_{ht.name.lower()}", f"{ht.label} 학자",
@@ -287,7 +293,7 @@ HAND_TYPE_SCHOLAR_JOKERS: List[Joker] = [
         6 + ht.base_mult, "add", _hand_scholar_effect(ht, 2),
         "rare" if (6 + ht.base_mult) > 10 else "uncommon",
     )
-    for ht in LEVEL_BONUS
+    for ht in _SCHOLAR_HAND_TYPES
 ]
 
 ENHANCEMENT_COUNT_JOKERS: List[Joker] = [
