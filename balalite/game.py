@@ -3,7 +3,7 @@ import random
 
 from .blinds import MAX_ANTE, make_blinds
 from .cards import Deck, card_from_dict, card_to_dict
-from .consumables import CARD_MODIFIER_POOL, CONSUMABLE_POOL, ENHANCEMENT_DESCRIPTIONS, LEVEL_BONUS
+from .consumables import CARD_MODIFIER_POOL, CONSUMABLE_POOL, ENHANCEMENT_DESCRIPTIONS, LEVEL_BONUS, RUNES
 from .decks import deck_by_key
 from .jokers import JOKER_POOL, RARITY_WEIGHT, apply_jokers
 from .packs import PACK_POOL
@@ -44,6 +44,25 @@ def _weighted_unique_sample(rng, items, weights, k):
                 del remaining[i]
                 break
     return chosen
+
+
+def _ensure_pool_offer(shop_offers, pool, rng, protected_pools=()):
+    """shop_offers 안에 pool에 속한 상품이 하나도 없으면 하나를 보장 진열한다.
+    다른 보장 슬롯(protected_pools)에 속한 상품은 교체 대상에서 제외한다."""
+    if any(offer in pool for offer in shop_offers):
+        return
+    guaranteed = rng.choice(pool)
+    protected = set(pool)
+    for p in protected_pools:
+        protected.update(p)
+    replace_idx = next(
+        (i for i, offer in enumerate(shop_offers) if offer in CONSUMABLE_POOL and offer not in protected),
+        None,
+    )
+    if replace_idx is not None:
+        shop_offers[replace_idx] = guaranteed
+    else:
+        shop_offers.append(guaranteed)
 
 
 def _joker_by_key(key):
@@ -372,7 +391,9 @@ class GameState:
     def _roll_shop_offers(self):
         """실제 발라트로처럼 상점 슬롯을 영역별로 나눠서 굴린다:
         카드 슬롯(조커 또는 소모품, 바우처로 개수 증가 가능) + 부스터 팩 전용 슬롯(고정 2개)
-        + 미보유 바우처 슬롯(있으면 1개). 팩은 카드 슬롯과 경쟁하지 않고 항상 등장한다."""
+        + 미보유 바우처 슬롯(있으면 1개). 팩은 카드 슬롯과 경쟁하지 않고 항상 등장한다.
+        카드 슬롯 안에서는 조커 100종에 묻혀 카드 강화 소모품·룬이 거의 안 뜨는 문제를
+        막기 위해, 강화 계열 소모품과 룬을 각각 최소 1개씩 보장한다."""
         card_pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
         card_weights = (
             [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL]
@@ -381,20 +402,8 @@ class GameState:
         card_slots = min(self.shop_offer_count, len(card_pool))
         self.shop_offers = _weighted_unique_sample(self.rng, card_pool, card_weights, card_slots)
 
-        if not any(offer in CARD_MODIFIER_POOL for offer in self.shop_offers):
-            guaranteed = self.rng.choice(CARD_MODIFIER_POOL)
-            replace_idx = next(
-                (
-                    i
-                    for i, offer in enumerate(self.shop_offers)
-                    if offer in CONSUMABLE_POOL and offer not in CARD_MODIFIER_POOL
-                ),
-                None,
-            )
-            if replace_idx is not None:
-                self.shop_offers[replace_idx] = guaranteed
-            else:
-                self.shop_offers.append(guaranteed)
+        _ensure_pool_offer(self.shop_offers, CARD_MODIFIER_POOL, self.rng, protected_pools=[RUNES])
+        _ensure_pool_offer(self.shop_offers, RUNES, self.rng, protected_pools=[CARD_MODIFIER_POOL])
 
         pack_slots = min(SHOP_PACK_SLOTS, len(PACK_POOL))
         self.shop_offers += _weighted_unique_sample(

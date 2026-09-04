@@ -4,6 +4,7 @@ import unittest
 from balalite.blinds import BOSS_EFFECTS, Blind, make_blinds
 from balalite.cards import Card, Rank, Suit
 from balalite.cli import InputError, _handle_blind_command
+from balalite.consumables import CARD_MODIFIER_POOL, RUNES
 from balalite.decks import DECK_POOL, deck_by_key
 from balalite.game import GameState, MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS
 from balalite.jokers import JOKER_POOL
@@ -158,6 +159,33 @@ class TestBossEffectExpansion(unittest.TestCase):
         self.assertEqual(normal.name, intensified.name)
         if normal.money_tax:
             self.assertGreater(intensified.money_tax, normal.money_tax)
+
+
+class TestShopGuaranteedSlots(unittest.TestCase):
+    def test_every_shop_visit_guarantees_a_card_modifier_and_a_rune(self):
+        game = GameState(seed="shop-guarantee")
+        for i in range(50):
+            game.rng.seed(f"shop-guarantee-{i}")
+            game._roll_shop_offers()
+            self.assertTrue(
+                any(o in CARD_MODIFIER_POOL for o in game.shop_offers),
+                "강화석/에디션석/인장석 계열이 하나도 없는 상점이 나왔습니다.",
+            )
+            self.assertTrue(
+                any(o in RUNES for o in game.shop_offers),
+                "룬이 하나도 없는 상점이 나왔습니다.",
+            )
+
+    def test_guaranteed_slots_do_not_clobber_each_other(self):
+        # 두 보장 로직이 서로의 슬롯을 밀어내지 않는지 확인
+        game = GameState(seed="shop-guarantee-no-clobber")
+        for i in range(50):
+            game.rng.seed(f"no-clobber-{i}")
+            game._roll_shop_offers()
+            modifier_count = sum(1 for o in game.shop_offers if o in CARD_MODIFIER_POOL)
+            rune_count = sum(1 for o in game.shop_offers if o in RUNES)
+            self.assertGreaterEqual(modifier_count, 1)
+            self.assertGreaterEqual(rune_count, 1)
 
 
 class TestDeckStakeSaveLoad(unittest.TestCase):
