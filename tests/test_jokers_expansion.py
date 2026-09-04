@@ -12,8 +12,9 @@ def joker(key):
 
 
 class TestJokerPoolIntegrity(unittest.TestCase):
-    def test_exactly_one_hundred_jokers(self):
-        self.assertEqual(len(JOKER_POOL), 100)
+    def test_exactly_one_hundred_ten_jokers(self):
+        # 100종 + 시너지 조커 10종(복제/누적형/후반 스케일링) = 110종
+        self.assertEqual(len(JOKER_POOL), 110)
 
     def test_all_keys_unique(self):
         keys = [j.key for j in JOKER_POOL]

@@ -210,6 +210,10 @@ class GameState:
         self.consumables = []
         self.hand_levels = {}
         self.owned_vouchers = set()
+        # 시너지 조커(연쇄/누적/성장형)가 상태를 저장하는 곳. 숫자만 담는 카운터와
+        # 문자열만 담는 메타 정보를 분리해 JSON 직렬화를 단순하게 유지한다.
+        self.stateful_joker_counters = {}
+        self.stateful_joker_meta = {}
 
         self.base_hand_size = max(1, HAND_SIZE + deck_type.hand_size_delta)
         self.base_plays = PLAYS_PER_ROUND
@@ -285,6 +289,10 @@ class GameState:
         self.last_result = None
         self.last_tag_message = None
         self._round_started_fresh = True
+
+        for j in self.jokers:
+            if j.on_round_start:
+                j.on_round_start(self)
 
     def sort_hand(self, by="rank"):
         self.sort_mode = by
@@ -394,6 +402,9 @@ class GameState:
         self.discards_left -= 1
         self._round_started_fresh = False
         self.last_result = None
+        for j in self.jokers:
+            if j.on_discard:
+                j.on_discard(self)
 
     def use_consumable(self, index, target_index=None):
         if index < 0 or index >= len(self.consumables):
@@ -451,6 +462,9 @@ class GameState:
             self.money += self.last_reward
             self.last_interest = min(self.money // 5, self.interest_cap)
             self.money += self.last_interest
+            for j in self.jokers:
+                if j.on_round_clear:
+                    j.on_round_clear(self)
             self._enter_shop()
         elif self.plays_left <= 0:
             self.phase = "game_over"
@@ -634,6 +648,8 @@ class GameState:
             "consumables": [{"key": c.key, "edition": c.edition} for c in self.consumables],
             "hand_levels": {ht.name: lv for ht, lv in self.hand_levels.items()},
             "owned_vouchers": list(self.owned_vouchers),
+            "stateful_joker_counters": self.stateful_joker_counters,
+            "stateful_joker_meta": self.stateful_joker_meta,
             "base_hand_size": self.base_hand_size,
             "base_plays": self.base_plays,
             "base_discards": self.base_discards,
@@ -693,6 +709,8 @@ class GameState:
         ]
         game.hand_levels = {HandType[name]: lv for name, lv in data["hand_levels"].items()}
         game.owned_vouchers = set(data["owned_vouchers"])
+        game.stateful_joker_counters = data.get("stateful_joker_counters", {})
+        game.stateful_joker_meta = data.get("stateful_joker_meta", {})
         game.base_hand_size = data["base_hand_size"]
         game.base_plays = data["base_plays"]
         game.base_discards = data["base_discards"]

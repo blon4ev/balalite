@@ -38,6 +38,11 @@ class Joker:
     effect: Callable[[ScoreContext], None]
     rarity: str = "common"
     edition: Optional[str] = None  # "negative"면 조커 슬롯을 차지하지 않음
+    # 조커 간 상호작용(시너지) 훅. 전부 선택 사항이며 기존 조커는 전혀 영향받지 않는다.
+    copies_neighbor: Optional[str] = None  # "next" | "previous" — 바로 옆 조커의 효과를 한 번 더 발동
+    on_round_start: Optional[Callable[["GameState"], None]] = None  # 라운드 시작 시 (누적치 리셋 등)
+    on_round_clear: Optional[Callable[["GameState"], None]] = None  # 블라인드 클리어 시 (영구 누적 등)
+    on_discard: Optional[Callable[["GameState"], None]] = None  # 버리기 사용 시 (연쇄 끊기 등)
 
 
 def _joker_basic(ctx):
@@ -604,6 +609,154 @@ BESPOKE_JOKERS: List[Joker] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# 시너지 조커. 위 조커들과 달리 "이 조건이면 +N" 식 단독 계산이 아니라, 다른
+# 조커나 이전 판의 결과를 참조해서 서로 얽히도록 설계했다 — 조커 조합 자체를
+# 고민하게 만드는 게 목적이다. 전부 자체 설계이며 발라트로의 특정 조커를
+# 그대로 옮긴 것이 아니다.
+# ---------------------------------------------------------------------------
+
+def _no_effect(ctx):
+    pass
+
+
+def _chain_reaction_effect(ctx):
+    game = ctx.game
+    if not game:
+        return
+    counter = game.stateful_joker_counters.get("chain_reaction", 0.0)
+    ctx.mult += counter
+    if game.stateful_joker_meta.get("chain_reaction_last_hand") == ctx.hand_type.name:
+        game.stateful_joker_counters["chain_reaction"] = counter + 3
+    else:
+        game.stateful_joker_counters["chain_reaction"] = 0.0
+    game.stateful_joker_meta["chain_reaction_last_hand"] = ctx.hand_type.name
+
+
+def _chain_reaction_on_round_start(game):
+    game.stateful_joker_counters["chain_reaction"] = 0.0
+    game.stateful_joker_meta.pop("chain_reaction_last_hand", None)
+
+
+def _growing_roots_effect(ctx):
+    game = ctx.game
+    if not game:
+        return
+    counter = game.stateful_joker_counters.get("growing_roots", 0.0)
+    ctx.chips += counter
+    game.stateful_joker_counters["growing_roots"] = counter + 8
+
+
+def _growing_roots_reset(game):
+    game.stateful_joker_counters["growing_roots"] = 0.0
+
+
+def _old_clockwork_effect(ctx):
+    game = ctx.game
+    if not game:
+        return
+    ctx.mult += game.stateful_joker_counters.get("old_clockwork", 0.0)
+
+
+def _old_clockwork_on_round_clear(game):
+    game.stateful_joker_counters["old_clockwork"] = game.stateful_joker_counters.get("old_clockwork", 0.0) + 1
+
+
+def _crumbling_hourglass_effect(ctx):
+    game = ctx.game
+    if not game:
+        return
+    ctx.mult += max(0.0, 20 - game.stateful_joker_counters.get("crumbling_hourglass", 0.0))
+
+
+def _crumbling_hourglass_on_round_clear(game):
+    key = "crumbling_hourglass"
+    game.stateful_joker_counters[key] = game.stateful_joker_counters.get(key, 0.0) + 2
+
+
+def _war_cry_effect(ctx):
+    game = ctx.game
+    if not game:
+        return
+    counter = game.stateful_joker_counters.get("war_cry", 0.0)
+    ctx.mult *= min(3.0, 1 + 0.03 * counter)
+
+
+def _war_cry_on_round_clear(game):
+    game.stateful_joker_counters["war_cry"] = game.stateful_joker_counters.get("war_cry", 0.0) + 1
+
+
+def _ante_judgment_effect(ctx):
+    if ctx.game:
+        ctx.mult *= min(2.0, 1 + 0.1 * ctx.game.ante)
+
+
+def _joker_resonance_effect(ctx):
+    if ctx.game:
+        ctx.mult *= min(2.5, 1 + 0.05 * len(ctx.game.jokers))
+
+
+def _compound_wizard_effect(ctx):
+    if ctx.game:
+        ctx.mult *= min(2.0, 1 + 0.005 * ctx.game.money)
+
+
+SYNERGY_JOKERS: List[Joker] = [
+    Joker(
+        "echo_conductor", "메아리 지휘자",
+        "바로 오른쪽 조커의 효과를 한 번 더 발동시킨다 (자신은 효과 없음)",
+        9, "add", _no_effect, "rare", copies_neighbor="next",
+    ),
+    Joker(
+        "mirror_shard", "거울 조각",
+        "바로 왼쪽 조커의 효과를 한 번 더 발동시킨다 (자신은 효과 없음)",
+        9, "add", _no_effect, "rare", copies_neighbor="previous",
+    ),
+    Joker(
+        "chain_reaction", "연쇄 반응",
+        "직전 플레이와 같은 족보를 연속으로 내면 Mult 보너스가 누적된다 (다른 족보를 내면 초기화)",
+        7, "add", _chain_reaction_effect, "uncommon", on_round_start=_chain_reaction_on_round_start,
+    ),
+    Joker(
+        "growing_roots", "성장하는 뿌리",
+        "이번 라운드에 버리기를 한 번도 안 썼다면, 플레이할 때마다 +8 Chips가 누적된다 (버리면 초기화)",
+        7, "add", _growing_roots_effect, "uncommon",
+        on_round_start=_growing_roots_reset, on_discard=_growing_roots_reset,
+    ),
+    Joker(
+        "old_clockwork", "오래된 태엽",
+        "블라인드를 클리어할 때마다 영구히 +1 Mult (런 내내 유지, 절대 감소하지 않음)",
+        10, "add", _old_clockwork_effect, "rare", on_round_clear=_old_clockwork_on_round_clear,
+    ),
+    Joker(
+        "crumbling_hourglass", "무너지는 모래시계",
+        "처음엔 +20 Mult로 시작하지만 블라인드를 클리어할 때마다 -2씩 영구히 약해진다",
+        8, "add", _crumbling_hourglass_effect, "uncommon",
+        on_round_clear=_crumbling_hourglass_on_round_clear,
+    ),
+    Joker(
+        "war_cry", "승리의 함성",
+        "지금까지 클리어한 블라인드 1개당 Mult x1.03 (최대 x3, 런 내내 누적)",
+        12, "mult_x", _war_cry_effect, "legendary", on_round_clear=_war_cry_on_round_clear,
+    ),
+    Joker(
+        "ante_judgment", "앤티의 심판",
+        "현재 앤티 1당 Mult x1.1 (최대 x2) — 후반 앤티일수록 강해진다",
+        9, "mult_x", _ante_judgment_effect, "rare",
+    ),
+    Joker(
+        "joker_resonance", "조커 공명",
+        "보유한 조커 1개당(본인 포함) Mult x1.05 (최대 x2.5)",
+        10, "mult_x", _joker_resonance_effect, "rare",
+    ),
+    Joker(
+        "compound_wizard", "복리의 마법사",
+        "보유 자금 $1당 Mult x0.5%p (최대 x2) — 자금을 모아둘수록 강해진다",
+        11, "mult_x", _compound_wizard_effect, "rare",
+    ),
+]
+
+
 JOKER_POOL: List[Joker] = [
     Joker("joker_basic", "조커", "+4 Mult", 4, "add", _joker_basic, "common"),
     Joker("chip_stacker", "칩 스태커", "+30 Chips", 4, "add", _chip_stacker, "common"),
@@ -636,15 +789,30 @@ JOKER_POOL: List[Joker] = [
     Joker("triple_master", "트리플 마스터", "트리플일 때 +12 Mult", 6, "add", _triple_master, "uncommon"),
     Joker("almighty", "만능 조커", "점수에 포함된 카드 1장당 +5 Chips, +2 Mult", 14, "add", _almighty, "legendary"),
 ] + SUIT_CHIP_JOKERS + NO_SUIT_JOKERS + RANK_PRESENT_JOKERS + HAND_TYPE_SCHOLAR_JOKERS + \
-    ENHANCEMENT_COUNT_JOKERS + EDITION_COUNT_JOKERS + BESPOKE_JOKERS
+    ENHANCEMENT_COUNT_JOKERS + EDITION_COUNT_JOKERS + BESPOKE_JOKERS + SYNERGY_JOKERS
+
+
+def _run_copy_pass(owned_jokers, ctx, timing):
+    """copies_neighbor가 설정된 조커는 자신의 효과 대신, 정해진 방향(next/previous)의
+    바로 옆 조커 효과를 한 번 더 발동시킨다. 옆 조커도 복제 조커면 연쇄되지 않는다."""
+    for i, j in enumerate(owned_jokers):
+        if not j.copies_neighbor:
+            continue
+        target_idx = i + 1 if j.copies_neighbor == "next" else i - 1
+        if 0 <= target_idx < len(owned_jokers):
+            target = owned_jokers[target_idx]
+            if target.timing == timing and not target.copies_neighbor:
+                target.effect(ctx)
 
 
 def apply_jokers(owned_jokers, played_cards, scoring_cards, hand_type, chips, mult, game=None):
     ctx = ScoreContext(played_cards, scoring_cards, hand_type, chips, mult, game=game)
     for j in owned_jokers:
-        if j.timing == "add":
+        if j.timing == "add" and not j.copies_neighbor:
             j.effect(ctx)
+    _run_copy_pass(owned_jokers, ctx, "add")
     for j in owned_jokers:
-        if j.timing == "mult_x":
+        if j.timing == "mult_x" and not j.copies_neighbor:
             j.effect(ctx)
+    _run_copy_pass(owned_jokers, ctx, "mult_x")
     return ctx.chips, ctx.mult
