@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, List, Optional
 
 from .scoring import HandType
@@ -35,6 +35,10 @@ EDITION_DESCRIPTIONS = {
     "polychrome": "이 카드가 점수에 포함되면 Mult x1.5",
 }
 
+# 네거티브 에디션: 플레잉 카드가 아니라 조커/소모품에 붙는 네 번째 에디션.
+# 효과는 칩/배수가 아니라 "슬롯을 차지하지 않음" — 사실상 영구 슬롯 +1.
+NEGATIVE_DESCRIPTION = "이 조커/소모품은 보유 슬롯을 차지하지 않습니다."
+
 # 카드 씰 종류와 설명 (강화/에디션과 별개인 세 번째 슬롯, game.py에서 처리)
 SEAL_DESCRIPTIONS = {
     "red": "이 카드가 점수에 포함되면 강화·에디션 효과가 한 번 더(레트리거) 적용됨",
@@ -49,10 +53,15 @@ class Consumable:
     name: str
     description: str
     cost: int
-    kind: str  # "charm" | "rune" | "enhancer"
-    effect: Callable[["GameState", Optional["Card"]], None]
+    kind: str  # "charm" | "rune" | "enhancer" | "editioner" | "sealer" | "spectral"
+    effect: Callable[["GameState", object], None]
     hand_type: Optional[HandType] = None  # kind == "rune"일 때만 사용
-    needs_target: bool = False  # kind == "enhancer"일 때 카드 지정 필요
+    target_type: str = "none"  # "none" | "card" | "joker" | "consumable"
+    edition: Optional[str] = None  # 이 소모품 자체가 네거티브 에디션을 받았을 때
+
+    @property
+    def needs_target(self):
+        return self.target_type != "none"
 
 
 def _gold_charm(game, card=None):
@@ -126,7 +135,7 @@ ENHANCERS: List[Consumable] = [
         7,
         "enhancer",
         _make_enhancer_effect(key),
-        needs_target=True,
+        target_type="card",
     )
     for key, label in [("bonus", "보너스"), ("mult", "멀티"), ("wild", "와일드"), ("glass", "유리")]
 ]
@@ -145,7 +154,7 @@ EDITIONERS: List[Consumable] = [
         9,
         "editioner",
         _make_editioner_effect(key),
-        needs_target=True,
+        target_type="card",
     )
     for key, label in [("foil", "포일"), ("holographic", "홀로그래픽"), ("polychrome", "폴리크롬")]
 ]
@@ -179,7 +188,7 @@ def _fortune_spectral(game, card=None):
 def _clone_spectral(game, card=None):
     from .game import MAX_JOKER_SLOTS
 
-    if game.jokers and len(game.jokers) < MAX_JOKER_SLOTS:
+    if game.jokers and game.joker_slot_count() < MAX_JOKER_SLOTS:
         game.jokers.append(game.rng.choice(game.jokers))
     else:
         game.money += 10
@@ -200,7 +209,7 @@ SPECTRALS: List[Consumable] = [
     ),
     Consumable(
         "spectral_ruin", "파괴", "지정한 손패 카드 1장을 덱에서 영구히 파괴합니다.",
-        6, "spectral", _ruin_spectral, needs_target=True,
+        6, "spectral", _ruin_spectral, target_type="card",
     ),
     Consumable(
         "spectral_fortune", "행운", "즉시 $15을 얻습니다.",
@@ -226,9 +235,40 @@ SEALERS: List[Consumable] = [
         8,
         "sealer",
         _make_sealer_effect(key),
-        needs_target=True,
+        target_type="card",
     )
     for key, label in [("red", "적색"), ("gold", "금색"), ("blue", "청색")]
 ]
 
-CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES + ENHANCERS + EDITIONERS + SEALERS + SPECTRALS
+def _replace_in_list_by_identity(items, target, **changes):
+    for i, x in enumerate(items):
+        if x is target:
+            items[i] = replace(x, **changes)
+            return True
+    return False
+
+
+def _negative_joker_effect(game, joker=None):
+    _replace_in_list_by_identity(game.jokers, joker, edition="negative")
+
+
+def _negative_consumable_effect(game, consumable=None):
+    _replace_in_list_by_identity(game.consumables, consumable, edition="negative")
+
+
+NEGATIVE_EDITIONERS: List[Consumable] = [
+    Consumable(
+        "editioner_negative_joker", "네거티브 조커석",
+        f"보유한 조커 1개를 네거티브 에디션으로 만듭니다 — {NEGATIVE_DESCRIPTION}",
+        16, "editioner", _negative_joker_effect, target_type="joker",
+    ),
+    Consumable(
+        "editioner_negative_consumable", "네거티브 소모품석",
+        f"보유한 다른 소모품 1개를 네거티브 에디션으로 만듭니다 — {NEGATIVE_DESCRIPTION}",
+        13, "editioner", _negative_consumable_effect, target_type="consumable",
+    ),
+]
+
+CONSUMABLE_POOL: List[Consumable] = (
+    CHARMS + RUNES + ENHANCERS + EDITIONERS + NEGATIVE_EDITIONERS + SEALERS + SPECTRALS
+)

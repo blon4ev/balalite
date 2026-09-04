@@ -57,13 +57,13 @@ def _handle_blind_command(game, cmd, args):
         game.discard_cards(indices)
     elif cmd in ("u", "use"):
         n = _parse_single_index(args, "소모품 번호")
-        card_index = None
+        target_index = None
         if len(args) > 1:
             try:
-                card_index = int(args[1]) - 1
+                target_index = int(args[1]) - 1
             except ValueError:
-                raise InputError("카드 번호는 숫자로 입력하세요.")
-        message = game.use_consumable(n, card_index)
+                raise InputError("대상 번호는 숫자로 입력하세요.")
+        message = game.use_consumable(n, target_index)
         print(message)
         _pause()
     elif cmd == "skip":

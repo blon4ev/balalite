@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from .cards import Rank, Suit
 from .scoring import HandType
@@ -37,6 +37,7 @@ class Joker:
     timing: str  # "add" 먼저 적용, "mult_x" 나중에 적용
     effect: Callable[[ScoreContext], None]
     rarity: str = "common"
+    edition: Optional[str] = None  # "negative"면 조커 슬롯을 차지하지 않음
 
 
 def _joker_basic(ctx):
@@ -525,7 +526,7 @@ def _odd_count(ctx):
 def _full_slots_bonus(ctx):
     from .game import MAX_JOKER_SLOTS
 
-    if ctx.game and len(ctx.game.jokers) >= MAX_JOKER_SLOTS:
+    if ctx.game and ctx.game.joker_slot_count() >= MAX_JOKER_SLOTS:
         ctx.mult *= 1.5
 
 

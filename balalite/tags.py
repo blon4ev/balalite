@@ -22,7 +22,7 @@ def _joker_tag(game):
     from .game import MAX_JOKER_SLOTS
 
     candidates = [j for j in JOKER_POOL if j not in game.jokers]
-    if candidates and len(game.jokers) < MAX_JOKER_SLOTS:
+    if candidates and game.joker_slot_count() < MAX_JOKER_SLOTS:
         joker = game.rng.choice(candidates)
         game.jokers.append(joker)
         game.last_tag_message = f"조커 태그: '{joker.name}'을(를) 무료로 획득했습니다."

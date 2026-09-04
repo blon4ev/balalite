@@ -1,3 +1,4 @@
+import dataclasses
 import random
 
 from .blinds import MAX_ANTE, make_blinds
@@ -128,6 +129,14 @@ class GameState:
     def boss_effect(self):
         return self.current_blind.boss_effect
 
+    def joker_slot_count(self):
+        """네거티브 에디션 조커는 슬롯을 차지하지 않는다."""
+        return sum(1 for j in self.jokers if j.edition != "negative")
+
+    def consumable_slot_count(self):
+        """네거티브 에디션 소모품은 슬롯을 차지하지 않는다."""
+        return sum(1 for c in self.consumables if c.edition != "negative")
+
     def _start_blind_round(self):
         self.deck.reshuffle_round(self.hand)
         self.hand = []
@@ -247,7 +256,7 @@ class GameState:
             del self.hand[i]
         self.deck.discard(cards)
         for c in cards:
-            if c.seal == "blue" and len(self.consumables) < MAX_CONSUMABLE_SLOTS:
+            if c.seal == "blue" and self.consumable_slot_count() < MAX_CONSUMABLE_SLOTS:
                 self.consumables.append(self.rng.choice(CONSUMABLE_POOL))
         self.hand.extend(self.deck.draw(len(indices)))
         self.sort_hand(self.sort_mode)
@@ -255,17 +264,30 @@ class GameState:
         self._round_started_fresh = False
         self.last_result = None
 
-    def use_consumable(self, index, card_index=None):
+    def use_consumable(self, index, target_index=None):
         if index < 0 or index >= len(self.consumables):
             return "잘못된 번호입니다."
         item = self.consumables[index]
-        card = None
-        if item.needs_target:
-            if card_index is None or not (0 <= card_index < len(self.hand)):
+        target = None
+        if item.target_type == "card":
+            if target_index is None or not (0 <= target_index < len(self.hand)):
                 return "대상 카드 번호를 올바르게 지정하세요 (예: u 1 3)."
-            card = self.hand[card_index]
-        item = self.consumables.pop(index)
-        item.effect(self, card)
+            target = self.hand[target_index]
+        elif item.target_type == "joker":
+            if target_index is None or not (0 <= target_index < len(self.jokers)):
+                return "대상 조커 번호를 올바르게 지정하세요 (예: u 1 2, j로 번호 확인)."
+            target = self.jokers[target_index]
+        elif item.target_type == "consumable":
+            if (
+                target_index is None
+                or not (0 <= target_index < len(self.consumables))
+                or target_index == index
+            ):
+                return "대상 소모품 번호를 올바르게 지정하세요 (자기 자신은 지정할 수 없습니다)."
+            target = self.consumables[target_index]
+
+        self.consumables.pop(index)
+        item.effect(self, target)
         return f"'{item.name}' 사용 완료!"
 
     def sell_joker(self, index):
@@ -357,10 +379,10 @@ class GameState:
             return
 
         is_joker = hasattr(item, "timing")
-        if is_joker and len(self.jokers) >= MAX_JOKER_SLOTS:
+        if is_joker and self.joker_slot_count() >= MAX_JOKER_SLOTS:
             self.shop_message = "조커 슬롯이 가득 찼습니다."
             return
-        if not is_joker and len(self.consumables) >= MAX_CONSUMABLE_SLOTS:
+        if not is_joker and self.consumable_slot_count() >= MAX_CONSUMABLE_SLOTS:
             self.shop_message = "소모품 슬롯이 가득 찼습니다."
             return
         if self.money < cost:
@@ -399,9 +421,9 @@ class GameState:
             return "잘못된 번호입니다."
         item = items[index]
         pack_type = self.pending_pack["pack_type"]
-        if pack_type == "joker" and len(self.jokers) >= MAX_JOKER_SLOTS:
+        if pack_type == "joker" and self.joker_slot_count() >= MAX_JOKER_SLOTS:
             return "조커 슬롯이 가득 찼습니다."
-        if pack_type == "consumable" and len(self.consumables) >= MAX_CONSUMABLE_SLOTS:
+        if pack_type == "consumable" and self.consumable_slot_count() >= MAX_CONSUMABLE_SLOTS:
             return "소모품 슬롯이 가득 찼습니다."
 
         del items[index]
@@ -446,8 +468,8 @@ class GameState:
             "ante": self.ante,
             "blind_index": self.blind_index,
             "money": self.money,
-            "jokers": [j.key for j in self.jokers],
-            "consumables": [c.key for c in self.consumables],
+            "jokers": [{"key": j.key, "edition": j.edition} for j in self.jokers],
+            "consumables": [{"key": c.key, "edition": c.edition} for c in self.consumables],
             "hand_levels": {ht.name: lv for ht, lv in self.hand_levels.items()},
             "owned_vouchers": list(self.owned_vouchers),
             "base_hand_size": self.base_hand_size,
@@ -488,8 +510,14 @@ class GameState:
         game.blinds = make_blinds(game.ante)
         game.blind_index = data["blind_index"]
         game.money = data["money"]
-        game.jokers = [_joker_by_key(k) for k in data["jokers"]]
-        game.consumables = [_consumable_by_key(k) for k in data["consumables"]]
+        game.jokers = [
+            dataclasses.replace(_joker_by_key(d["key"]), edition=d.get("edition"))
+            for d in data["jokers"]
+        ]
+        game.consumables = [
+            dataclasses.replace(_consumable_by_key(d["key"]), edition=d.get("edition"))
+            for d in data["consumables"]
+        ]
         game.hand_levels = {HandType[name]: lv for name, lv in data["hand_levels"].items()}
         game.owned_vouchers = set(data["owned_vouchers"])
         game.base_hand_size = data["base_hand_size"]

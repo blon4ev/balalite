@@ -64,6 +64,12 @@ def _rule(width=60):
     print(f"{DIM}{'─' * width}{RESET}")
 
 
+def _edition_marked_name(item):
+    if getattr(item, "edition", None) == "negative":
+        return f"{item.name}{MAGENTA}✦{RESET}"
+    return item.name
+
+
 FAKE_LOG_LINES = [
     "Compiling TypeScript sources...",
     "Waiting for database migration...",
@@ -178,10 +184,10 @@ def render_status(game):
     bar = _progress_bar(game.round_score, blind.requirement)
     print(f"현재 점수: {game.round_score} / {blind.requirement}  {bar}")
     print(f"플레이 {game.plays_left}회 남음 | 버리기 {game.discards_left}회 남음 | {GREEN}${game.money}{RESET}")
-    joker_str = ", ".join(j.name for j in game.jokers) if game.jokers else "(없음)"
-    print(f"조커 ({len(game.jokers)}/{MAX_JOKER_SLOTS}): {joker_str}")
-    consumable_str = ", ".join(c.name for c in game.consumables) if game.consumables else "(없음)"
-    print(f"소모품 ({len(game.consumables)}/{MAX_CONSUMABLE_SLOTS}): {consumable_str}")
+    joker_str = ", ".join(_edition_marked_name(j) for j in game.jokers) if game.jokers else "(없음)"
+    print(f"조커 ({game.joker_slot_count()}/{MAX_JOKER_SLOTS}): {joker_str}")
+    consumable_str = ", ".join(_edition_marked_name(c) for c in game.consumables) if game.consumables else "(없음)"
+    print(f"소모품 ({game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS}): {consumable_str}")
     if game.last_result:
         hand_type, chips, mult, gained, destroyed = game.last_result
         remaining = max(0, blind.requirement - game.round_score)
@@ -251,8 +257,8 @@ def render_shop(game):
     if game.last_interest:
         print(f"{GREEN}이자 수입: +${game.last_interest}{RESET}")
     print(
-        f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {len(game.jokers)}/{MAX_JOKER_SLOTS}   "
-        f"소모품 슬롯: {len(game.consumables)}/{MAX_CONSUMABLE_SLOTS}"
+        f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {game.joker_slot_count()}/{MAX_JOKER_SLOTS}   "
+        f"소모품 슬롯: {game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS}"
     )
     _rule()
     if not game.shop_offers:
@@ -290,21 +296,21 @@ def blind_clear_line(game):
 
 
 def render_inventory(game):
-    print(f"{BOLD}보유 조커{RESET}")
+    print(f"{BOLD}보유 조커 ({game.joker_slot_count()}/{MAX_JOKER_SLOTS} 슬롯 사용){RESET}")
     if not game.jokers:
         print("(없음)")
     for i, j in enumerate(game.jokers):
         rarity_color = RARITY_COLOR.get(j.rarity, WHITE)
         print(
-            f" {i + 1}: {BOLD}{j.name}{RESET} [{rarity_color}{RARITY_LABEL.get(j.rarity, j.rarity)}{RESET}]: "
+            f" {i + 1}: {BOLD}{_edition_marked_name(j)}{RESET} [{rarity_color}{RARITY_LABEL.get(j.rarity, j.rarity)}{RESET}]: "
             f"{j.description} ({YELLOW}${j.cost}{RESET})"
         )
     print()
-    print(f"{BOLD}보유 소모품{RESET}")
+    print(f"{BOLD}보유 소모품 ({game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS} 슬롯 사용){RESET}")
     if not game.consumables:
         print("(없음)")
     for i, c in enumerate(game.consumables):
-        print(f" {i + 1}: {BOLD}{c.name}{RESET}: {c.description}")
+        print(f" {i + 1}: {BOLD}{_edition_marked_name(c)}{RESET}: {c.description}")
     print()
     leveled = {ht: lv for ht, lv in game.hand_levels.items() if lv > 0}
     print(f"{BOLD}족보 강화 레벨{RESET}")
@@ -336,7 +342,8 @@ def render_help(phase):
     if phase == "blind":
         print(" p <번호...>  선택한 1~5장을 플레이해 점수를 냅니다 (예: p 1 3 5)")
         print(" d <번호...>  선택한 카드를 버리고 새로 뽑습니다 (예: d 2 4)")
-        print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석/에디션석/인장석/'파괴' 스펙트럴은 대상 카드 번호가 필요합니다 (예: u 1 3)")
+        print(" u <번호> [대상번호]  소모품을 사용합니다. 강화석/에디션석/인장석/'파괴' 스펙트럴은 대상이 필요합니다 (예: u 1 3)")
+        print("              대상은 종류에 따라 다릅니다 — 카드: 손패 번호 / 조커·소모품용 에디션석: j로 확인한 보유 목록 번호")
         print(" skip         (스몰/빅 블라인드에서, 아직 아무 행동도 하지 않았을 때) 블라인드를 스킵하고 태그를 얻습니다")
         print(" s            손패 정렬 방식을 랭크/무늬로 전환합니다")
         print(" rank         족보표(하이 카드~스트레이트 플러시 기본 점수)를 확인합니다")
