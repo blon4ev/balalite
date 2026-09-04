@@ -23,6 +23,13 @@ ENHANCEMENT_DESCRIPTIONS = {
     "glass": "이 카드가 점수에 포함되면 Mult x2, 이후 25% 확률로 파괴됨",
 }
 
+# 카드 에디션 종류와 설명 (강화와 별개로 부여 가능, game.py의 _score_cards에서 처리)
+EDITION_DESCRIPTIONS = {
+    "foil": "이 카드가 점수에 포함되면 +50 칩",
+    "holographic": "이 카드가 점수에 포함되면 +10 Mult",
+    "polychrome": "이 카드가 점수에 포함되면 Mult x1.5",
+}
+
 
 @dataclass(frozen=True)
 class Consumable:
@@ -112,4 +119,85 @@ ENHANCERS: List[Consumable] = [
     for key, label in [("bonus", "보너스"), ("mult", "멀티"), ("wild", "와일드"), ("glass", "유리")]
 ]
 
-CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES + ENHANCERS
+def _make_editioner_effect(edition):
+    def effect(game, card=None):
+        card.edition = edition
+    return effect
+
+
+EDITIONERS: List[Consumable] = [
+    Consumable(
+        f"editioner_{key}",
+        f"{label} 에디션석",
+        f"손패 카드 1장에 에디션을 부여합니다 — {EDITION_DESCRIPTIONS[key]}",
+        9,
+        "editioner",
+        _make_editioner_effect(key),
+        needs_target=True,
+    )
+    for key, label in [("foil", "포일"), ("holographic", "홀로그래픽"), ("polychrome", "폴리크롬")]
+]
+
+
+def _mist_spectral(game, card=None):
+    game.mist_active = True
+
+
+def _echo_spectral(game, card=None):
+    game.echo_mult_bonus += 2
+
+
+def _curse_spectral(game, card=None):
+    if game.hand:
+        target = game.rng.choice(game.hand)
+        target.enhancement = game.rng.choice(list(ENHANCEMENT_DESCRIPTIONS.keys()))
+
+
+def _ruin_spectral(game, card=None):
+    if card in game.hand:
+        game.hand.remove(card)
+        game.hand.extend(game.deck.draw(1))
+        game.sort_hand(game.sort_mode)
+
+
+def _fortune_spectral(game, card=None):
+    game.money += 15
+
+
+def _clone_spectral(game, card=None):
+    from .game import MAX_JOKER_SLOTS
+
+    if game.jokers and len(game.jokers) < MAX_JOKER_SLOTS:
+        game.jokers.append(game.rng.choice(game.jokers))
+    else:
+        game.money += 10
+
+
+SPECTRALS: List[Consumable] = [
+    Consumable(
+        "spectral_mist", "안개", "이번 플레이에서 조커로 인한 추가 칩/배수 효과가 2배로 적용됩니다.",
+        8, "spectral", _mist_spectral,
+    ),
+    Consumable(
+        "spectral_echo", "메아리", "이번 라운드 남은 모든 플레이에 +2 Mult가 누적 적용됩니다.",
+        7, "spectral", _echo_spectral,
+    ),
+    Consumable(
+        "spectral_curse", "저주", "손패의 무작위 카드 1장에 무작위 강화를 부여합니다.",
+        6, "spectral", _curse_spectral,
+    ),
+    Consumable(
+        "spectral_ruin", "파괴", "지정한 손패 카드 1장을 덱에서 영구히 파괴합니다.",
+        6, "spectral", _ruin_spectral, needs_target=True,
+    ),
+    Consumable(
+        "spectral_fortune", "행운", "즉시 $15을 얻습니다.",
+        9, "spectral", _fortune_spectral,
+    ),
+    Consumable(
+        "spectral_clone", "복제", "보유한 조커 중 하나를 무작위로 복제합니다 (슬롯이 없으면 대신 $10).",
+        12, "spectral", _clone_spectral,
+    ),
+]
+
+CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES + ENHANCERS + EDITIONERS + SPECTRALS

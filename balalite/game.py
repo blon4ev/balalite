@@ -3,7 +3,7 @@ import random
 from .blinds import MAX_ANTE, make_blinds
 from .cards import Deck
 from .consumables import CONSUMABLE_POOL, LEVEL_BONUS
-from .jokers import JOKER_POOL, apply_jokers
+from .jokers import JOKER_POOL, RARITY_WEIGHT, apply_jokers
 from .scoring import evaluate_hand
 from .tags import TAG_POOL
 from .vouchers import VOUCHER_POOL
@@ -18,6 +18,23 @@ SHOP_OFFER_COUNT = 4
 SHOP_REROLL_COST = 2
 DEFAULT_INTEREST_CAP = 5
 GLASS_BREAK_CHANCE = 0.25
+CONSUMABLE_SHOP_WEIGHT = 5
+
+
+def _weighted_unique_sample(rng, items, weights, k):
+    remaining = list(zip(items, weights))
+    chosen = []
+    for _ in range(min(k, len(remaining))):
+        total = sum(w for _, w in remaining)
+        r = rng.uniform(0, total)
+        upto = 0.0
+        for i, (item, w) in enumerate(remaining):
+            upto += w
+            if upto >= r:
+                chosen.append(item)
+                del remaining[i]
+                break
+    return chosen
 
 
 class GameState:
@@ -47,6 +64,8 @@ class GameState:
         self.plays_left = PLAYS_PER_ROUND
         self.discards_left = DISCARDS_PER_ROUND
         self.next_play_mult_multiplier = 1
+        self.mist_active = False
+        self.echo_mult_bonus = 0
         self._round_started_fresh = True
 
         self.phase = "blind"
@@ -74,6 +93,8 @@ class GameState:
         self.plays_left = self.base_plays
         self.discards_left = self.base_discards
         self.next_play_mult_multiplier = 1
+        self.mist_active = False
+        self.echo_mult_bonus = 0
 
         effect = self.boss_effect
         if effect:
@@ -118,10 +139,23 @@ class GameState:
                 mult_multiplier *= 2
                 if self.rng.random() < GLASS_BREAK_CHANCE:
                     destroyed.append(c)
+            if c.edition == "foil":
+                chip_sum += 50
+            elif c.edition == "holographic":
+                mult_bonus += 10
+            elif c.edition == "polychrome":
+                mult_multiplier *= 1.5
 
         base_chips = hand_type.base_chips + level * level_chips + chip_sum
         base_mult = hand_type.base_mult + level * level_mult + mult_bonus
-        chips, mult = apply_jokers(self.jokers, cards, scoring_cards, hand_type, base_chips, base_mult)
+        chips, mult = apply_jokers(self.jokers, cards, scoring_cards, hand_type, base_chips, base_mult, game=self)
+
+        if self.mist_active:
+            chips = base_chips + (chips - base_chips) * 2
+            mult = base_mult + (mult - base_mult) * 2
+            self.mist_active = False
+
+        mult += self.echo_mult_bonus
         mult *= mult_multiplier
         mult *= self.next_play_mult_multiplier
         self.next_play_mult_multiplier = 1
@@ -211,8 +245,9 @@ class GameState:
 
     def _roll_shop_offers(self):
         pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
+        weights = [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL] + [CONSUMABLE_SHOP_WEIGHT] * len(CONSUMABLE_POOL)
         k = min(self.shop_offer_count, len(pool))
-        self.shop_offers = self.rng.sample(pool, k=k)
+        self.shop_offers = _weighted_unique_sample(self.rng, pool, weights, k)
         voucher_candidates = [v for v in VOUCHER_POOL if v.key not in self.owned_vouchers]
         if voucher_candidates:
             self.shop_offers.append(self.rng.choice(voucher_candidates))

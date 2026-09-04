@@ -43,12 +43,19 @@ ENHANCEMENT_LABELS = {
     "glass": "유리",
 }
 
+EDITION_LABELS = {
+    "foil": "포일",
+    "holographic": "홀로그래픽",
+    "polychrome": "폴리크롬",
+}
+
 
 @dataclass
 class Card:
     rank: Rank
     suit: Suit
     enhancement: Optional[str] = None
+    edition: Optional[str] = None
 
     def __str__(self):
         return f"{self.rank.label}{self.suit.symbol}"

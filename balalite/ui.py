@@ -1,6 +1,7 @@
 from .blinds import MAX_ANTE
 from .cards import Suit
 from .game import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS, SHOP_REROLL_COST
+from .jokers import RARITY_LABEL
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -27,6 +28,22 @@ ENHANCEMENT_TAG_LETTER = {
     "wild": "W",
     "glass": "G",
 }
+EDITION_TAG_COLOR = {
+    "foil": GREEN,
+    "holographic": MAGENTA,
+    "polychrome": YELLOW,
+}
+EDITION_TAG_LETTER = {
+    "foil": "F",
+    "holographic": "H",
+    "polychrome": "P",
+}
+RARITY_COLOR = {
+    "common": WHITE,
+    "uncommon": CYAN,
+    "rare": BLUE,
+    "legendary": YELLOW,
+}
 
 
 def clear_screen():
@@ -39,6 +56,10 @@ def colorize_card(card):
     if card.enhancement:
         tag_color = ENHANCEMENT_TAG_COLOR.get(card.enhancement, WHITE)
         letter = ENHANCEMENT_TAG_LETTER.get(card.enhancement, "?")
+        text += f"{tag_color}{letter}{RESET}"
+    if card.edition:
+        tag_color = EDITION_TAG_COLOR.get(card.edition, WHITE)
+        letter = EDITION_TAG_LETTER.get(card.edition, "?")
         text += f"{tag_color}{letter}{RESET}"
     return text
 
@@ -90,16 +111,22 @@ def render_hand_prompt(game):
     print(f"{DIM}" + " | ".join(hints) + f"{RESET}")
 
 
+OFFER_KIND_LABELS = {
+    "rune": "룬",
+    "enhancer": "강화석",
+    "editioner": "에디션석",
+    "spectral": "스펙트럴",
+    "charm": "부적",
+}
+
+
 def _offer_kind_tag(item):
     if hasattr(item, "timing"):
-        return "조커"
+        rarity_color = RARITY_COLOR.get(item.rarity, WHITE)
+        return f"조커·{rarity_color}{RARITY_LABEL.get(item.rarity, item.rarity)}{RESET}"
     if getattr(item, "kind", None) == "voucher":
         return "바우처"
-    if item.kind == "rune":
-        return "룬"
-    if item.kind == "enhancer":
-        return "강화석"
-    return "부적"
+    return OFFER_KIND_LABELS.get(item.kind, item.kind)
 
 
 def _offer_line(i, item, game):
@@ -144,7 +171,11 @@ def render_inventory(game):
     if not game.jokers:
         print("(없음)")
     for i, j in enumerate(game.jokers):
-        print(f" {i + 1}: {BOLD}{j.name}{RESET}: {j.description} ({YELLOW}${j.cost}{RESET})")
+        rarity_color = RARITY_COLOR.get(j.rarity, WHITE)
+        print(
+            f" {i + 1}: {BOLD}{j.name}{RESET} [{rarity_color}{RARITY_LABEL.get(j.rarity, j.rarity)}{RESET}]: "
+            f"{j.description} ({YELLOW}${j.cost}{RESET})"
+        )
     print()
     print(f"{BOLD}보유 소모품{RESET}")
     if not game.consumables:
@@ -176,7 +207,7 @@ def render_help(phase):
     if phase == "blind":
         print(" p <번호...>  선택한 1~5장을 플레이해 점수를 냅니다 (예: p 1 3 5)")
         print(" d <번호...>  선택한 카드를 버리고 새로 뽑습니다 (예: d 2 4)")
-        print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석은 대상 카드 번호가 필요합니다 (예: u 1 3)")
+        print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석/에디션석/'파괴' 스펙트럴은 대상 카드 번호가 필요합니다 (예: u 1 3)")
         print(" skip         (스몰/빅 블라인드에서, 아직 아무 행동도 하지 않았을 때) 블라인드를 스킵하고 태그를 얻습니다")
         print(" s            손패 정렬 방식을 랭크/무늬로 전환합니다")
     else:
