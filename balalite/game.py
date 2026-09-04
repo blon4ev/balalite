@@ -16,13 +16,13 @@ DISCARDS_PER_ROUND = 3
 STARTING_MONEY = 4
 MAX_JOKER_SLOTS = 5
 MAX_CONSUMABLE_SLOTS = 2
-SHOP_OFFER_COUNT = 4
+SHOP_CARD_SLOTS = 2  # 조커·소모품이 나오는 카드 슬롯 수 (바우처로 증가 가능)
+SHOP_PACK_SLOTS = 2  # 부스터 팩 전용 슬롯 수 (고정)
 SHOP_REROLL_COST = 2
 DEFAULT_INTEREST_CAP = 5
 GLASS_BREAK_CHANCE = 0.25
 GOLD_SEAL_INCOME = 3
 CONSUMABLE_SHOP_WEIGHT = 5
-PACK_SHOP_WEIGHT = 4
 
 
 def _weighted_unique_sample(rng, items, weights, k):
@@ -96,7 +96,7 @@ class GameState:
         self.base_hand_size = HAND_SIZE
         self.base_plays = PLAYS_PER_ROUND
         self.base_discards = DISCARDS_PER_ROUND
-        self.shop_offer_count = SHOP_OFFER_COUNT
+        self.shop_offer_count = SHOP_CARD_SLOTS
         self.shop_discount = 0.0
         self.interest_cap = DEFAULT_INTEREST_CAP
 
@@ -327,14 +327,16 @@ class GameState:
         self._roll_shop_offers()
 
     def _roll_shop_offers(self):
-        pool = list(JOKER_POOL) + list(CONSUMABLE_POOL) + list(PACK_POOL)
-        weights = (
+        """실제 발라트로처럼 상점 슬롯을 영역별로 나눠서 굴린다:
+        카드 슬롯(조커 또는 소모품, 바우처로 개수 증가 가능) + 부스터 팩 전용 슬롯(고정 2개)
+        + 미보유 바우처 슬롯(있으면 1개). 팩은 카드 슬롯과 경쟁하지 않고 항상 등장한다."""
+        card_pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
+        card_weights = (
             [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL]
             + [CONSUMABLE_SHOP_WEIGHT] * len(CONSUMABLE_POOL)
-            + [PACK_SHOP_WEIGHT] * len(PACK_POOL)
         )
-        k = min(self.shop_offer_count, len(pool))
-        self.shop_offers = _weighted_unique_sample(self.rng, pool, weights, k)
+        card_slots = min(self.shop_offer_count, len(card_pool))
+        self.shop_offers = _weighted_unique_sample(self.rng, card_pool, card_weights, card_slots)
 
         if not any(offer in CARD_MODIFIER_POOL for offer in self.shop_offers):
             guaranteed = self.rng.choice(CARD_MODIFIER_POOL)
@@ -350,6 +352,11 @@ class GameState:
                 self.shop_offers[replace_idx] = guaranteed
             else:
                 self.shop_offers.append(guaranteed)
+
+        pack_slots = min(SHOP_PACK_SLOTS, len(PACK_POOL))
+        self.shop_offers += _weighted_unique_sample(
+            self.rng, PACK_POOL, [1] * len(PACK_POOL), pack_slots
+        )
 
         voucher_candidates = [v for v in VOUCHER_POOL if v.key not in self.owned_vouchers]
         if voucher_candidates:

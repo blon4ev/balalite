@@ -42,5 +42,5 @@ VOUCHER_POOL: List[Voucher] = [
     Voucher("voucher_play", "숙련의 증표", "라운드당 플레이 횟수가 영구히 1회 늘어납니다.", 12, effect=_extend_plays),
     Voucher("voucher_discount", "할인의 증표", "상점 구매 가격이 20% 할인됩니다 (중첩 가능, 최대 50%).", 10, effect=_shop_discount),
     Voucher("voucher_interest", "저축의 증표", "이자 상한이 $5 늘어납니다.", 8, effect=_interest_boost),
-    Voucher("voucher_shop", "안목의 증표", "상점 진열 상품 수가 1개 늘어납니다.", 10, effect=_shop_expansion),
+    Voucher("voucher_shop", "안목의 증표", "상점 카드 슬롯(조커·소모품) 수가 1개 늘어납니다.", 10, effect=_shop_expansion),
 ]

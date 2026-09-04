@@ -265,6 +265,26 @@ def _offer_line(i, item, game):
     return f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}  ({cost_str})"
 
 
+# 실제 발라트로처럼 상점을 "카드(조커·소모품) / 부스터 팩 / 바우처" 세 영역으로
+# 시각적으로 구분해서 보여준다. 구매·판매에 쓰는 번호는 game.shop_offers의
+# 전체 인덱스를 그대로 유지한다 (영역은 표시용일 뿐).
+_OFFER_GROUP_ORDER = ["card", "pack", "voucher"]
+_OFFER_GROUP_LABELS = {
+    "card": "카드 (조커 · 소모품)",
+    "pack": "부스터 팩",
+    "voucher": "바우처",
+}
+
+
+def _offer_group(item):
+    kind = getattr(item, "kind", None)
+    if kind == "pack":
+        return "pack"
+    if kind == "voucher":
+        return "voucher"
+    return "card"
+
+
 def render_shop(game):
     _fake_terminal_header()
     _rule()
@@ -284,8 +304,14 @@ def render_shop(game):
     _rule()
     if not game.shop_offers:
         print("(더 이상 살 수 있는 상품이 없습니다)")
-    for i, item in enumerate(game.shop_offers):
-        print(_offer_line(i, item, game))
+    else:
+        for group in _OFFER_GROUP_ORDER:
+            indices = [i for i, item in enumerate(game.shop_offers) if _offer_group(item) == group]
+            if not indices:
+                continue
+            print(f"{DIM}— {_OFFER_GROUP_LABELS[group]} —{RESET}")
+            for i in indices:
+                print(_offer_line(i, game.shop_offers[i], game))
     _rule()
     if game.shop_message:
         print(f"{MAGENTA}{game.shop_message}{RESET}")
