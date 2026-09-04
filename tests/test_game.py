@@ -44,7 +44,7 @@ class TestBossEffects(unittest.TestCase):
         game = GameState(seed="boss-ban")
         self._force_boss(game, effect)
         cards = [Card(Rank.NINE, Suit.SPADES), Card(Rank.NINE, Suit.HEARTS)]
-        _, _, _, gained = game._score_cards(cards)
+        _, _, _, gained, _ = game._score_cards(cards)
         self.assertEqual(gained, 0)
 
     def test_debuff_suit_removes_chip_contribution(self):
@@ -52,7 +52,7 @@ class TestBossEffects(unittest.TestCase):
         game = GameState(seed="boss-debuff")
         self._force_boss(game, effect)
         cards = [Card(Rank.KING, Suit.HEARTS), Card(Rank.KING, Suit.SPADES)]
-        hand_type, chips, _, _ = game._score_cards(cards)
+        hand_type, chips, _, _, _ = game._score_cards(cards)
         self.assertEqual(hand_type, HandType.PAIR)
         # 하트 King(10칩)은 무효화되어 스페이드 King(10칩)만 반영되어야 함
         self.assertEqual(chips, HandType.PAIR.base_chips + 10)
@@ -71,8 +71,7 @@ class TestConsumables(unittest.TestCase):
         game.use_consumable(0)
         self.assertEqual(game.hand_levels[HandType.PAIR], 1)
         cards = [Card(Rank.NINE, Suit.SPADES), Card(Rank.NINE, Suit.HEARTS)]
-        _, chips, _, _ = game._score_cards(cards)
-        bonus_chips, _ = game.hand_levels[HandType.PAIR], None
+        _, chips, _, _, _ = game._score_cards(cards)
         self.assertGreater(chips, HandType.PAIR.base_chips + 9 + 9)
 
     def test_gold_charm_grants_money(self):
@@ -87,9 +86,9 @@ class TestConsumables(unittest.TestCase):
         game.consumables.append(charm("double_charm"))
         game.use_consumable(0)
         cards = [Card(Rank.TWO, Suit.SPADES)]
-        _, _, mult1, _ = game._score_cards(cards)
+        _, _, mult1, _, _ = game._score_cards(cards)
         self.assertAlmostEqual(mult1, HandType.HIGH_CARD.base_mult * 2)
-        _, _, mult2, _ = game._score_cards(cards)
+        _, _, mult2, _, _ = game._score_cards(cards)
         self.assertAlmostEqual(mult2, HandType.HIGH_CARD.base_mult)
 
 

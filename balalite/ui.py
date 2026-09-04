@@ -11,8 +11,22 @@ YELLOW = "\033[33m"
 GREEN = "\033[32m"
 MAGENTA = "\033[35m"
 WHITE = "\033[37m"
+BLUE = "\033[34m"
 
 BAR_WIDTH = 24
+
+ENHANCEMENT_TAG_COLOR = {
+    "bonus": YELLOW,
+    "mult": MAGENTA,
+    "wild": CYAN,
+    "glass": BLUE,
+}
+ENHANCEMENT_TAG_LETTER = {
+    "bonus": "B",
+    "mult": "M",
+    "wild": "W",
+    "glass": "G",
+}
 
 
 def clear_screen():
@@ -21,7 +35,12 @@ def clear_screen():
 
 def colorize_card(card):
     color = RED if card.suit in (Suit.HEARTS, Suit.DIAMONDS) else WHITE
-    return f"{color}[{card.rank.label}{card.suit.symbol}]{RESET}"
+    text = f"{color}[{card.rank.label}{card.suit.symbol}]{RESET}"
+    if card.enhancement:
+        tag_color = ENHANCEMENT_TAG_COLOR.get(card.enhancement, WHITE)
+        letter = ENHANCEMENT_TAG_LETTER.get(card.enhancement, "?")
+        text += f"{tag_color}{letter}{RESET}"
+    return text
 
 
 def render_hand(hand):
@@ -47,32 +66,56 @@ def render_status(game):
     print(f"현재 점수: {game.round_score} / {blind.requirement}  {bar}")
     print(f"플레이 {game.plays_left}회 남음 | 버리기 {game.discards_left}회 남음 | {GREEN}${game.money}{RESET}")
     joker_str = ", ".join(j.name for j in game.jokers) if game.jokers else "(없음)"
-    print(f"조커 ({len(game.jokers)}/5): {joker_str}")
+    print(f"조커 ({len(game.jokers)}/{MAX_JOKER_SLOTS}): {joker_str}")
     consumable_str = ", ".join(c.name for c in game.consumables) if game.consumables else "(없음)"
-    print(f"소모품 ({len(game.consumables)}/2): {consumable_str}")
+    print(f"소모품 ({len(game.consumables)}/{MAX_CONSUMABLE_SLOTS}): {consumable_str}")
     if game.last_result:
-        hand_type, chips, mult, gained = game.last_result
+        hand_type, chips, mult, gained, destroyed = game.last_result
         print(f"{MAGENTA}지난 플레이: {hand_type.label}  {int(chips)} 칩 x {mult:g} 배 = {gained}점{RESET}")
+        if destroyed:
+            names = ", ".join(str(c) for c in destroyed)
+            print(f"{BLUE}유리 카드 파괴됨: {names}{RESET}")
+    if game.last_tag_message:
+        print(f"{CYAN}{game.last_tag_message}{RESET}")
     print()
 
 
 def render_hand_prompt(game):
     render_hand(game.hand)
     print()
-    print(
-        f"{DIM}p 1 2 3 (플레이) | d 1 2 (버리기) | u 1 (소모품 사용) | x 1 (조커 판매) | "
-        f"s (정렬) | j (보유 정보) | h (도움말) | q (그만두기){RESET}"
-    )
+    hints = ["p 1 2 3 (플레이)", "d 1 2 (버리기)", "u 1 [카드번호] (소모품 사용)", "x 1 (조커 판매)"]
+    if game.can_skip_blind():
+        hints.append("skip (블라인드 스킵)")
+    hints += ["s (정렬)", "j (보유 정보)", "h (도움말)", "q (그만두기)"]
+    print(f"{DIM}" + " | ".join(hints) + f"{RESET}")
 
 
-def _offer_line(i, item):
-    kind_tag = "조커" if hasattr(item, "timing") else ("룬" if item.kind == "rune" else "부적")
-    return f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}  ({YELLOW}${item.cost}{RESET})"
+def _offer_kind_tag(item):
+    if hasattr(item, "timing"):
+        return "조커"
+    if getattr(item, "kind", None) == "voucher":
+        return "바우처"
+    if item.kind == "rune":
+        return "룬"
+    if item.kind == "enhancer":
+        return "강화석"
+    return "부적"
+
+
+def _offer_line(i, item, game):
+    kind_tag = _offer_kind_tag(item)
+    cost = game._discounted_cost(item.cost)
+    cost_str = f"{YELLOW}${cost}{RESET}"
+    if cost != item.cost:
+        cost_str = f"{DIM}${item.cost}{RESET} → {cost_str}"
+    return f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}  ({cost_str})"
 
 
 def render_shop(game):
     print(f"{BOLD}{CYAN}=== 상점 ==={RESET}")
     print(f"{blind_clear_line(game)}")
+    if game.last_interest:
+        print(f"{GREEN}이자 수입: +${game.last_interest}{RESET}")
     print(
         f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {len(game.jokers)}/{MAX_JOKER_SLOTS}   "
         f"소모품 슬롯: {len(game.consumables)}/{MAX_CONSUMABLE_SLOTS}"
@@ -81,7 +124,7 @@ def render_shop(game):
     if not game.shop_offers:
         print("(더 이상 살 수 있는 상품이 없습니다)")
     for i, item in enumerate(game.shop_offers):
-        print(_offer_line(i, item))
+        print(_offer_line(i, item, game))
     print()
     if game.shop_message:
         print(f"{MAGENTA}{game.shop_message}{RESET}")
@@ -116,6 +159,15 @@ def render_inventory(game):
     for ht, lv in leveled.items():
         print(f" - {ht.label}: Lv.{lv}")
     print()
+    print(f"{BOLD}보유 바우처{RESET}")
+    from .vouchers import VOUCHER_POOL
+
+    owned = [v for v in VOUCHER_POOL if v.key in game.owned_vouchers]
+    if not owned:
+        print("(없음)")
+    for v in owned:
+        print(f" - {BOLD}{v.name}{RESET}: {v.description}")
+    print()
 
 
 def render_help(phase):
@@ -124,14 +176,15 @@ def render_help(phase):
     if phase == "blind":
         print(" p <번호...>  선택한 1~5장을 플레이해 점수를 냅니다 (예: p 1 3 5)")
         print(" d <번호...>  선택한 카드를 버리고 새로 뽑습니다 (예: d 2 4)")
-        print(" u <번호>     보유한 소모품을 사용합니다 (예: u 1)")
+        print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석은 대상 카드 번호가 필요합니다 (예: u 1 3)")
+        print(" skip         (스몰/빅 블라인드에서, 아직 아무 행동도 하지 않았을 때) 블라인드를 스킵하고 태그를 얻습니다")
         print(" s            손패 정렬 방식을 랭크/무늬로 전환합니다")
     else:
         print(" b <번호>     상점에서 해당 번호의 상품을 구매합니다 (예: b 1)")
         print(f" r            상점을 새로고침합니다 (${SHOP_REROLL_COST})")
         print(" c            다음 블라인드로 진행합니다")
     print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")
-    print(" j            보유 조커/소모품/족보 강화 정보를 확인합니다")
+    print(" j            보유 조커/소모품/바우처/족보 강화 정보를 확인합니다")
     print(" h            이 도움말을 다시 봅니다")
     print(" q            게임을 종료합니다")
     print()

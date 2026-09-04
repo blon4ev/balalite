@@ -45,7 +45,8 @@ def evaluate_hand(cards):
     counts = sorted(((len(v), k.order, k) for k, v in groups.items()), reverse=True)
     counts = [(cnt, rank) for cnt, _, rank in counts]
 
-    is_flush = len(cards) == 5 and len({c.suit for c in cards}) == 1
+    non_wild_suits = {c.suit for c in cards if c.enhancement != "wild"}
+    is_flush = len(cards) == 5 and len(non_wild_suits) <= 1
     straight_cards = _detect_straight(cards)
 
     if is_flush and straight_cards:

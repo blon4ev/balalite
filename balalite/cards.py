@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 import random
 
 
@@ -35,29 +36,53 @@ class Rank(Enum):
         self.chips = chips
 
 
-@dataclass(frozen=True)
+ENHANCEMENT_LABELS = {
+    "bonus": "보너스",
+    "mult": "멀티",
+    "wild": "와일드",
+    "glass": "유리",
+}
+
+
+@dataclass
 class Card:
     rank: Rank
     suit: Suit
+    enhancement: Optional[str] = None
 
     def __str__(self):
         return f"{self.rank.label}{self.suit.symbol}"
 
 
 class Deck:
+    """런 전체에서 유지되는 52장의 카드 풀. 카드 강화 상태가 라운드를 넘어 유지되도록
+    매 라운드 새로 만들지 않고, 낸/버린 카드를 discard_pile에 모았다가 재셔플한다."""
+
     def __init__(self, rng=None):
         self.rng = rng or random.Random()
-        self.cards = []
-        self.reset()
-
-    def reset(self):
         self.cards = [Card(rank, suit) for suit in Suit for rank in Rank]
+        self.discard_pile = []
         self.rng.shuffle(self.cards)
 
     def draw(self, count):
         drawn = []
         for _ in range(count):
             if not self.cards:
-                self.reset()
+                self._recycle()
+            if not self.cards:
+                break
             drawn.append(self.cards.pop())
         return drawn
+
+    def discard(self, cards):
+        self.discard_pile.extend(cards)
+
+    def _recycle(self):
+        self.cards.extend(self.discard_pile)
+        self.discard_pile = []
+        self.rng.shuffle(self.cards)
+
+    def reshuffle_round(self, leftover_hand):
+        """라운드 시작 시 이전 손패를 회수하고 전체를 다시 섞는다."""
+        self.discard(leftover_hand)
+        self._recycle()

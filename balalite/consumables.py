@@ -15,6 +15,14 @@ LEVEL_BONUS = {
     HandType.STRAIGHT_FLUSH: (40, 4),
 }
 
+# 카드 강화 종류와 설명 (게임플레이 로직은 game.py의 _score_cards에서 처리)
+ENHANCEMENT_DESCRIPTIONS = {
+    "bonus": "이 카드가 점수에 포함되면 +30 칩",
+    "mult": "이 카드가 점수에 포함되면 +4 Mult",
+    "wild": "플러시 판정 시 모든 무늬로 취급",
+    "glass": "이 카드가 점수에 포함되면 Mult x2, 이후 25% 확률로 파괴됨",
+}
+
 
 @dataclass(frozen=True)
 class Consumable:
@@ -22,20 +30,21 @@ class Consumable:
     name: str
     description: str
     cost: int
-    kind: str  # "charm" (즉발 효과) | "rune" (족보 영구 강화)
-    effect: Callable[["GameState"], None]
+    kind: str  # "charm" | "rune" | "enhancer"
+    effect: Callable[["GameState", Optional["Card"]], None]
     hand_type: Optional[HandType] = None  # kind == "rune"일 때만 사용
+    needs_target: bool = False  # kind == "enhancer"일 때 카드 지정 필요
 
 
-def _gold_charm(game):
+def _gold_charm(game, card=None):
     game.money += 8
 
 
-def _double_charm(game):
+def _double_charm(game, card=None):
     game.next_play_mult_multiplier *= 2
 
 
-def _reset_charm(game):
+def _reset_charm(game, card=None):
     count = len(game.hand)
     for i in sorted(range(count), reverse=True):
         del game.hand[i]
@@ -43,11 +52,11 @@ def _reset_charm(game):
     game.sort_hand(game.sort_mode)
 
 
-def _ease_charm(game):
+def _ease_charm(game, card=None):
     game.discards_left += 2
 
 
-def _chance_charm(game):
+def _chance_charm(game, card=None):
     game.plays_left += 1
 
 
@@ -61,7 +70,7 @@ CHARMS: List[Consumable] = [
 
 
 def _make_rune_effect(hand_type):
-    def effect(game):
+    def effect(game, card=None):
         game.hand_levels[hand_type] = game.hand_levels.get(hand_type, 0) + 1
     return effect
 
@@ -83,4 +92,24 @@ RUNES: List[Consumable] = [
     for hand_type in LEVEL_BONUS
 ]
 
-CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES
+
+def _make_enhancer_effect(enhancement):
+    def effect(game, card=None):
+        card.enhancement = enhancement
+    return effect
+
+
+ENHANCERS: List[Consumable] = [
+    Consumable(
+        f"enhancer_{key}",
+        f"{label} 강화석",
+        f"손패 카드 1장에 강화를 부여합니다 — {ENHANCEMENT_DESCRIPTIONS[key]}",
+        7,
+        "enhancer",
+        _make_enhancer_effect(key),
+        needs_target=True,
+    )
+    for key, label in [("bonus", "보너스"), ("mult", "멀티"), ("wild", "와일드"), ("glass", "유리")]
+]
+
+CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES + ENHANCERS
