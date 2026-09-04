@@ -24,21 +24,21 @@ ENHANCEMENT_TAG_COLOR = {
     "wild": CYAN,
     "glass": BLUE,
 }
-ENHANCEMENT_TAG_LETTER = {
-    "bonus": "B",
-    "mult": "M",
-    "wild": "W",
-    "glass": "G",
+ENHANCEMENT_SGR = {
+    "bonus": 33,
+    "mult": 35,
+    "wild": 36,
+    "glass": 34,
 }
 EDITION_TAG_COLOR = {
     "foil": GREEN,
     "holographic": MAGENTA,
     "polychrome": YELLOW,
 }
-EDITION_TAG_LETTER = {
-    "foil": "F",
-    "holographic": "H",
-    "polychrome": "P",
+EDITION_SGR = {
+    "foil": 32,
+    "holographic": 35,
+    "polychrome": 33,
 }
 RARITY_COLOR = {
     "common": WHITE,
@@ -62,21 +62,31 @@ def _rule(width=60):
 
 
 def colorize_card(card):
-    color = RED if card.suit in (Suit.HEARTS, Suit.DIAMONDS) else WHITE
-    prefix = ""
+    """카드를 다음 규칙으로 표시한다:
+    - 강화가 있으면 괄호 모양이 ⟦ ⟧로 바뀌고 색이 강화 종류를 나타낸다 (색 없이도 모양으로 구분 가능).
+    - 에디션이 있으면 카드 전체가 반전(reverse video)되어 "빛나는" 것처럼 보인다.
+    - 씰이 있으면 카드 앞에 색점(●)이 붙는다.
+    """
+    base_code = 31 if card.suit in (Suit.HEARTS, Suit.DIAMONDS) else 37
+
+    if card.enhancement:
+        color_code = ENHANCEMENT_SGR.get(card.enhancement, base_code)
+        open_br, close_br = "⟦", "⟧"
+    elif card.edition:
+        color_code = EDITION_SGR.get(card.edition, base_code)
+        open_br, close_br = "[", "]"
+    else:
+        color_code = base_code
+        open_br, close_br = "[", "]"
+
+    reverse = "7;" if card.edition else ""
+    body = f"\033[{reverse}{color_code}m{open_br}{card.suit.symbol} {card.rank.label}{close_br}{RESET}"
+
     if card.seal:
         seal_color = SEAL_DOT_COLOR.get(card.seal, WHITE)
-        prefix = f"{seal_color}●{RESET}"
-    text = f"{prefix}{color}[{card.suit.symbol} {card.rank.label}]{RESET}"
-    if card.enhancement:
-        tag_color = ENHANCEMENT_TAG_COLOR.get(card.enhancement, WHITE)
-        letter = ENHANCEMENT_TAG_LETTER.get(card.enhancement, "?")
-        text += f"{tag_color}{letter}{RESET}"
-    if card.edition:
-        tag_color = EDITION_TAG_COLOR.get(card.edition, WHITE)
-        letter = EDITION_TAG_LETTER.get(card.edition, "?")
-        text += f"{tag_color}{letter}{RESET}"
-    return text
+        body = f"{seal_color}●{RESET}{body}"
+
+    return body
 
 
 def render_hand(hand):
@@ -86,13 +96,18 @@ def render_hand(hand):
 
 def render_legend():
     print(
-        f"{DIM}표시 범례 — 강화: {ENHANCEMENT_TAG_COLOR['bonus']}B{RESET}{DIM}보너스+30칩 "
-        f"{ENHANCEMENT_TAG_COLOR['mult']}M{RESET}{DIM}멀티+4배수 "
-        f"{ENHANCEMENT_TAG_COLOR['wild']}W{RESET}{DIM}와일드무늬 "
-        f"{ENHANCEMENT_TAG_COLOR['glass']}G{RESET}{DIM}유리x2(파괴위험) | 에디션: "
-        f"{EDITION_TAG_COLOR['foil']}F{RESET}{DIM}포일+50칩 "
-        f"{EDITION_TAG_COLOR['holographic']}H{RESET}{DIM}홀로+10배수 "
-        f"{EDITION_TAG_COLOR['polychrome']}P{RESET}{DIM}폴리x1.5 | 씰: "
+        f"{DIM}표시 범례 — 강화(괄호가 {RESET}⟦ ⟧{DIM}로 바뀌고 색이 다름): "
+        f"{ENHANCEMENT_TAG_COLOR['bonus']}노랑{RESET}{DIM}=보너스+30칩 "
+        f"{ENHANCEMENT_TAG_COLOR['mult']}자홍{RESET}{DIM}=멀티+4배수 "
+        f"{ENHANCEMENT_TAG_COLOR['wild']}청록{RESET}{DIM}=와일드무늬 "
+        f"{ENHANCEMENT_TAG_COLOR['glass']}파랑{RESET}{DIM}=유리x2(파괴위험){RESET}"
+    )
+    print(
+        f"{DIM}에디션(카드 전체가 반전되어 빛남): "
+        f"{EDITION_TAG_COLOR['foil']}초록빛{RESET}{DIM}=포일+50칩 "
+        f"{EDITION_TAG_COLOR['holographic']}자홍빛{RESET}{DIM}=홀로+10배수 "
+        f"{EDITION_TAG_COLOR['polychrome']}노랑빛{RESET}{DIM}=폴리x1.5   "
+        f"씰(카드 앞 점): "
         f"{SEAL_DOT_COLOR['red']}●{RESET}{DIM}적(레트리거) "
         f"{SEAL_DOT_COLOR['gold']}●{RESET}{DIM}금(+$3) "
         f"{SEAL_DOT_COLOR['blue']}●{RESET}{DIM}청(소모품){RESET}"
