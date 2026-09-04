@@ -184,9 +184,17 @@ def render_status(game):
     bar = _progress_bar(game.round_score, blind.requirement)
     print(f"현재 점수: {game.round_score} / {blind.requirement}  {bar}")
     print(f"플레이 {game.plays_left}회 남음 | 버리기 {game.discards_left}회 남음 | {GREEN}${game.money}{RESET}")
-    joker_str = ", ".join(_edition_marked_name(j) for j in game.jokers) if game.jokers else "(없음)"
+    joker_str = (
+        ", ".join(f"{DIM}{i + 1}:{RESET}{_edition_marked_name(j)}" for i, j in enumerate(game.jokers))
+        if game.jokers
+        else "(없음)"
+    )
     print(f"조커 ({game.joker_slot_count()}/{MAX_JOKER_SLOTS}): {joker_str}")
-    consumable_str = ", ".join(_edition_marked_name(c) for c in game.consumables) if game.consumables else "(없음)"
+    consumable_str = (
+        ", ".join(f"{DIM}{i + 1}:{RESET}{_edition_marked_name(c)}" for i, c in enumerate(game.consumables))
+        if game.consumables
+        else "(없음)"
+    )
     print(f"소모품 ({game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS}): {consumable_str}")
     if game.last_result:
         hand_type, chips, mult, gained, destroyed = game.last_result
@@ -214,9 +222,16 @@ def render_hand_prompt(game):
     hints = ["p 1 2 3 (플레이)", "d 1 2 (버리기)", "u 1 [카드번호] (소모품 사용)", "x 1 (조커 판매)"]
     if game.can_skip_blind():
         hints.append("skip (블라인드 스킵)")
-    hints += ["s (정렬)", "rank (족보표)", "j (보유 정보)", "save (저장 후 종료)", "h (도움말)", "q (그만두기)"]
+    hints += [
+        "s (정렬)",
+        "rank (족보표)",
+        "j (보유 정보)",
+        "legend (표시 범례)",
+        "save (저장 후 종료)",
+        "h (도움말)",
+        "q (그만두기)",
+    ]
     print(f"{DIM}" + " | ".join(hints) + f"{RESET}")
-    render_legend()
 
 
 OFFER_KIND_LABELS = {
@@ -260,6 +275,12 @@ def render_shop(game):
         f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {game.joker_slot_count()}/{MAX_JOKER_SLOTS}   "
         f"소모품 슬롯: {game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS}"
     )
+    joker_str = (
+        ", ".join(f"{DIM}{i + 1}:{RESET}{_edition_marked_name(j)}" for i, j in enumerate(game.jokers))
+        if game.jokers
+        else "(없음)"
+    )
+    print(f"보유 조커 (판매 대상 번호): {joker_str}")
     _rule()
     if not game.shop_offers:
         print("(더 이상 살 수 있는 상품이 없습니다)")
@@ -343,12 +364,13 @@ def render_help(phase):
         print(" p <번호...>  선택한 1~5장을 플레이해 점수를 냅니다 (예: p 1 3 5)")
         print(" d <번호...>  선택한 카드를 버리고 새로 뽑습니다 (예: d 2 4)")
         print(" u <번호> [대상번호]  소모품을 사용합니다. 강화석/에디션석/인장석/'파괴' 스펙트럴은 대상이 필요합니다 (예: u 1 3)")
-        print("              대상은 종류에 따라 다릅니다 — 카드: 손패 번호 / 조커·소모품용 에디션석: j로 확인한 보유 목록 번호")
+        print("              대상은 종류에 따라 다릅니다 — 카드: 손패 번호 / 조커·소모품용 에디션석: 화면에 표시된 보유 목록 번호")
         print(" skip         (스몰/빅 블라인드에서, 아직 아무 행동도 하지 않았을 때) 블라인드를 스킵하고 태그를 얻습니다")
         print(" s            손패 정렬 방식을 랭크/무늬로 전환합니다")
         print(" rank         족보표(하이 카드~스트레이트 플러시 기본 점수)를 확인합니다")
+        print(" legend       카드 강화/에디션/씰 표시 범례(색/기호 의미)를 확인합니다")
         print(" save         현재 진행 상황을 저장하고 게임을 종료합니다 (다음 실행 시 이어하기)")
-        print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")
+        print(" x <번호>     보유한 조커를 판매합니다 (화면의 조커 목록 번호 사용, 구매가의 절반 환불, 예: x 1)")
     elif phase == "shop":
         print(" b <번호>     상점에서 해당 번호의 상품을 구매합니다 (예: b 1)")
         print(f" r            상점을 새로고침합니다 (${SHOP_REROLL_COST})")

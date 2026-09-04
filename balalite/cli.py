@@ -80,6 +80,9 @@ def _handle_blind_command(game, cmd, args):
     elif cmd in ("rank", "ranks", "guide"):
         ui.render_hand_guide(game)
         _pause()
+    elif cmd in ("legend",):
+        ui.render_legend()
+        _pause()
     elif cmd in ("save",):
         _save_and_quit(game)
     elif cmd in ("j", "jokers", "inventory"):

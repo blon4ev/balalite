@@ -272,3 +272,7 @@ NEGATIVE_EDITIONERS: List[Consumable] = [
 CONSUMABLE_POOL: List[Consumable] = (
     CHARMS + RUNES + ENHANCERS + EDITIONERS + NEGATIVE_EDITIONERS + SEALERS + SPECTRALS
 )
+
+# 카드/조커/소모품에 강화·에디션·씰을 부여하는 소모품들. 상점에 매번 최소 1개는
+# 등장하도록 보장해 "강화를 어떻게 하는지 모르겠다"는 발견 가능성 문제를 해소한다.
+CARD_MODIFIER_POOL: List[Consumable] = ENHANCERS + EDITIONERS + SEALERS + NEGATIVE_EDITIONERS

@@ -3,7 +3,7 @@ import random
 
 from .blinds import MAX_ANTE, make_blinds
 from .cards import Deck, card_from_dict, card_to_dict
-from .consumables import CONSUMABLE_POOL, LEVEL_BONUS
+from .consumables import CARD_MODIFIER_POOL, CONSUMABLE_POOL, LEVEL_BONUS
 from .jokers import JOKER_POOL, RARITY_WEIGHT, apply_jokers
 from .packs import PACK_POOL
 from .scoring import HandType, evaluate_hand
@@ -335,6 +335,22 @@ class GameState:
         )
         k = min(self.shop_offer_count, len(pool))
         self.shop_offers = _weighted_unique_sample(self.rng, pool, weights, k)
+
+        if not any(offer in CARD_MODIFIER_POOL for offer in self.shop_offers):
+            guaranteed = self.rng.choice(CARD_MODIFIER_POOL)
+            replace_idx = next(
+                (
+                    i
+                    for i, offer in enumerate(self.shop_offers)
+                    if offer in CONSUMABLE_POOL and offer not in CARD_MODIFIER_POOL
+                ),
+                None,
+            )
+            if replace_idx is not None:
+                self.shop_offers[replace_idx] = guaranteed
+            else:
+                self.shop_offers.append(guaranteed)
+
         voucher_candidates = [v for v in VOUCHER_POOL if v.key not in self.owned_vouchers]
         if voucher_candidates:
             self.shop_offers.append(self.rng.choice(voucher_candidates))
