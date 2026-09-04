@@ -417,7 +417,7 @@ class GameState:
             target = self.hand[target_index]
         elif item.target_type == "joker":
             if target_index is None or not (0 <= target_index < len(self.jokers)):
-                return "대상 조커 번호를 올바르게 지정하세요 (예: u 1 2, j로 번호 확인)."
+                return "대상 유물 번호를 올바르게 지정하세요 (예: u 1 2, j로 번호 확인)."
             target = self.jokers[target_index]
         elif item.target_type == "consumable":
             if (
@@ -425,7 +425,7 @@ class GameState:
                 or not (0 <= target_index < len(self.consumables))
                 or target_index == index
             ):
-                return "대상 소모품 번호를 올바르게 지정하세요 (자기 자신은 지정할 수 없습니다)."
+                return "대상 보급품 번호를 올바르게 지정하세요 (자기 자신은 지정할 수 없습니다)."
             target = self.consumables[target_index]
 
         self.consumables.pop(index)
@@ -445,7 +445,7 @@ class GameState:
 
     def skip_blind(self):
         if not self.can_skip_blind():
-            return "지금은 블라인드를 스킵할 수 없습니다."
+            return "지금은 웨이브를 스킵할 수 없습니다."
         tag = self.rng.choice(TAG_POOL)
         tag.effect(self)
         message = self.last_tag_message or f"'{tag.name}' 효과를 받았습니다."
@@ -476,11 +476,13 @@ class GameState:
         self._roll_shop_offers()
 
     def _roll_shop_offers(self):
-        """실제 발라트로처럼 상점 슬롯을 영역별로 나눠서 굴린다:
-        카드 슬롯(조커 또는 소모품, 바우처로 개수 증가 가능) + 부스터 팩 전용 슬롯(고정 2개)
-        + 미보유 바우처 슬롯(있으면 1개). 팩은 카드 슬롯과 경쟁하지 않고 항상 등장한다.
-        카드 슬롯 안에서는 조커 100종에 묻혀 카드 강화 소모품·룬이 거의 안 뜨는 문제를
-        막기 위해, 강화 계열 소모품과 룬을 각각 최소 1개씩 보장한다."""
+        """보급소 재고를 영역별로 나눠서 굴린다: 카드 슬롯(유물 또는 보급품, 훈련
+        프로그램으로 개수 증가 가능) + 보급 상자 전용 슬롯(고정 2개) + 미보유 훈련
+        프로그램 슬롯(있으면 1개). 상자는 카드 슬롯과 경쟁하지 않고 항상 등장한다.
+        카드 슬롯 안에서는 유물 110종에 묻혀 카드 강화 보급품·교범이 거의 안 뜨는
+        문제를 막기 위해, 강화 계열 보급품과 교범을 각각 최소 1개씩 보장한다.
+        보스 웨이브를 막 처치했을 때는 몬스터 헌터식 "확정 전리품"으로 유물 1개
+        등장도 보장한다."""
         card_pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
         card_weights = (
             [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL]
@@ -491,6 +493,10 @@ class GameState:
 
         _ensure_pool_offer(self.shop_offers, CARD_MODIFIER_POOL, self.rng, protected_pools=[RUNES])
         _ensure_pool_offer(self.shop_offers, RUNES, self.rng, protected_pools=[CARD_MODIFIER_POOL])
+        if self.current_blind.kind == "boss":
+            _ensure_pool_offer(
+                self.shop_offers, JOKER_POOL, self.rng, protected_pools=[RUNES, CARD_MODIFIER_POOL]
+            )
 
         pack_slots = min(SHOP_PACK_SLOTS, len(PACK_POOL))
         self.shop_offers += _weighted_unique_sample(
@@ -508,7 +514,7 @@ class GameState:
         self.money -= self.reroll_cost
         self.reroll_cost += REROLL_COST_INCREMENT
         self._roll_shop_offers()
-        self.shop_message = "상점을 새로고침했습니다."
+        self.shop_message = "보급소 재고를 새로고침했습니다."
 
     def _discounted_cost(self, cost):
         return max(1, int(cost * (1 - self.shop_discount)))
@@ -543,10 +549,10 @@ class GameState:
 
         is_joker = hasattr(item, "timing")
         if is_joker and self.joker_slot_count() >= self.max_joker_slots:
-            self.shop_message = "조커 슬롯이 가득 찼습니다."
+            self.shop_message = "유물 슬롯이 가득 찼습니다."
             return
         if not is_joker and self.consumable_slot_count() >= self.max_consumable_slots:
-            self.shop_message = "소모품 슬롯이 가득 찼습니다."
+            self.shop_message = "보급품 슬롯이 가득 찼습니다."
             return
         if self.money < cost:
             self.shop_message = "돈이 부족합니다."
@@ -588,9 +594,9 @@ class GameState:
         item = items[index]
         pack_type = self.pending_pack["pack_type"]
         if pack_type == "joker" and self.joker_slot_count() >= self.max_joker_slots:
-            return "조커 슬롯이 가득 찼습니다."
+            return "유물 슬롯이 가득 찼습니다."
         if pack_type == "consumable" and self.consumable_slot_count() >= self.max_consumable_slots:
-            return "소모품 슬롯이 가득 찼습니다."
+            return "보급품 슬롯이 가득 찼습니다."
 
         del items[index]
         if pack_type == "joker":

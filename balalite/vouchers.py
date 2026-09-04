@@ -45,12 +45,12 @@ def _consumable_slot_expansion(game):
 
 
 VOUCHER_POOL: List[Voucher] = [
-    Voucher("voucher_hand", "확장의 증표", "손패 크기가 영구히 1장 늘어납니다.", 10, effect=_extend_hand),
-    Voucher("voucher_discard", "여유의 증표", "라운드당 버리기 횟수가 영구히 1회 늘어납니다.", 10, effect=_extend_discards),
-    Voucher("voucher_play", "숙련의 증표", "라운드당 플레이 횟수가 영구히 1회 늘어납니다.", 12, effect=_extend_plays),
-    Voucher("voucher_discount", "할인의 증표", "상점 구매 가격이 20% 할인됩니다 (중첩 가능, 최대 50%).", 10, effect=_shop_discount),
-    Voucher("voucher_interest", "저축의 증표", "이자 상한이 $5 늘어납니다.", 8, effect=_interest_boost),
-    Voucher("voucher_shop", "안목의 증표", "상점 카드 슬롯(조커·소모품) 수가 1개 늘어납니다.", 10, effect=_shop_expansion),
-    Voucher("voucher_joker_slot", "그릇의 증표", "조커 슬롯이 영구히 1개 늘어납니다.", 14, effect=_joker_slot_expansion),
-    Voucher("voucher_consumable_slot", "주머니의 증표", "소모품 슬롯이 영구히 1개 늘어납니다.", 12, effect=_consumable_slot_expansion),
+    Voucher("voucher_hand", "확장 훈련", "카드 패 크기가 영구히 1장 늘어납니다.", 10, effect=_extend_hand),
+    Voucher("voucher_discard", "여유 훈련", "웨이브당 재정비 횟수가 영구히 1회 늘어납니다.", 10, effect=_extend_discards),
+    Voucher("voucher_play", "숙련 훈련", "웨이브당 공격 횟수가 영구히 1회 늘어납니다.", 12, effect=_extend_plays),
+    Voucher("voucher_discount", "협상 훈련", "보급소 구매 가격이 20% 할인됩니다 (중첩 가능, 최대 50%).", 10, effect=_shop_discount),
+    Voucher("voucher_interest", "저축 훈련", "이자 상한이 $5 늘어납니다.", 8, effect=_interest_boost),
+    Voucher("voucher_shop", "안목 훈련", "보급소 카드 슬롯(유물·보급품) 수가 1개 늘어납니다.", 10, effect=_shop_expansion),
+    Voucher("voucher_joker_slot", "장비창 훈련", "유물 슬롯이 영구히 1개 늘어납니다.", 14, effect=_joker_slot_expansion),
+    Voucher("voucher_consumable_slot", "배낭 훈련", "보급품 슬롯이 영구히 1개 늘어납니다.", 12, effect=_consumable_slot_expansion),
 ]

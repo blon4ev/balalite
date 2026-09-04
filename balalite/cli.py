@@ -53,15 +53,15 @@ def _handle_blind_command(game, cmd, args):
         indices = _parse_indices(args, len(game.hand))
         max_cards = game.boss_effect.max_cards_per_play if game.boss_effect else None
         if max_cards is not None and len(indices) > max_cards:
-            raise InputError(f"이 보스 블라인드에서는 한 번에 최대 {max_cards}장까지만 낼 수 있습니다.")
+            raise InputError(f"이 보스 웨이브에서는 한 번에 최대 {max_cards}장까지만 낼 수 있습니다.")
         game.play_cards(indices)
     elif cmd in ("d", "discard"):
         if game.discards_left <= 0:
-            raise InputError("버리기 횟수를 모두 사용했습니다.")
+            raise InputError("재정비 횟수를 모두 사용했습니다.")
         indices = _parse_indices(args, len(game.hand))
         game.discard_cards(indices)
     elif cmd in ("u", "use"):
-        n = _parse_single_index(args, "소모품 번호")
+        n = _parse_single_index(args, "보급품 번호")
         target_index = None
         if len(args) > 1:
             try:
@@ -76,7 +76,7 @@ def _handle_blind_command(game, cmd, args):
         print(message)
         _pause()
     elif cmd in ("x", "sell"):
-        n = _parse_single_index(args, "조커 번호")
+        n = _parse_single_index(args, "유물 번호")
         message = game.sell_joker(n)
         print(message)
         _pause()
@@ -109,7 +109,7 @@ def _handle_shop_command(game, cmd, args):
     elif cmd in ("r", "reroll"):
         game.reroll_shop()
     elif cmd in ("x", "sell"):
-        n = _parse_single_index(args, "조커 번호")
+        n = _parse_single_index(args, "유물 번호")
         game.shop_message = game.sell_joker(n)
     elif cmd in ("c", "continue"):
         game.continue_from_shop()
@@ -213,11 +213,11 @@ def _prompt_start():
 
 def _prompt_deck():
     print()
-    print(f"{ui.BOLD}덱을 선택하세요{ui.RESET}")
+    print(f"{ui.BOLD}생존자를 선택하세요{ui.RESET}")
     for i, d in enumerate(DECK_POOL):
         print(f" {i + 1}: {ui.BOLD}{d.name}{ui.RESET} — {d.description}")
     try:
-        raw = input("번호를 입력하세요 (엔터: 1번 표준 덱): ").strip()
+        raw = input("번호를 입력하세요 (엔터: 1번 평범한 생존자): ").strip()
     except (EOFError, KeyboardInterrupt):
         print()
         raise SystemExit
@@ -234,7 +234,7 @@ def _prompt_deck():
 
 def _prompt_stake():
     print()
-    print(f"{ui.BOLD}난이도(스테이크)를 선택하세요{ui.RESET} — 숫자가 높을수록 어렵고, 효과는 아래로 누적됩니다.")
+    print(f"{ui.BOLD}난이도(위협도)를 선택하세요{ui.RESET} — 숫자가 높을수록 어렵고, 효과는 아래로 누적됩니다.")
     for s in STAKE_POOL:
         print(f" {s.level}: {ui.BOLD}{s.name}{ui.RESET} — {s.description}")
     try:
