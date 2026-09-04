@@ -67,7 +67,7 @@ def colorize_card(card):
     if card.seal:
         seal_color = SEAL_DOT_COLOR.get(card.seal, WHITE)
         prefix = f"{seal_color}●{RESET}"
-    text = f"{prefix}{color}[{card.suit.symbol}{card.rank.label}]{RESET}"
+    text = f"{prefix}{color}[{card.suit.symbol} {card.rank.label}]{RESET}"
     if card.enhancement:
         tag_color = ENHANCEMENT_TAG_COLOR.get(card.enhancement, WHITE)
         letter = ENHANCEMENT_TAG_LETTER.get(card.enhancement, "?")
@@ -95,7 +95,7 @@ def render_legend():
         f"{EDITION_TAG_COLOR['polychrome']}P{RESET}{DIM}폴리x1.5 | 씰: "
         f"{SEAL_DOT_COLOR['red']}●{RESET}{DIM}적(레트리거) "
         f"{SEAL_DOT_COLOR['gold']}●{RESET}{DIM}금(+$3) "
-        f"{SEAL_DOT_COLOR['blue']}●{RESET}{DIM}청(소모품) — 자세한 설명은 rank 명령{RESET}"
+        f"{SEAL_DOT_COLOR['blue']}●{RESET}{DIM}청(소모품){RESET}"
     )
 
 
@@ -160,13 +160,13 @@ def render_status(game):
 def render_hand_prompt(game):
     print()
     render_hand(game.hand)
-    render_legend()
     print()
     hints = ["p 1 2 3 (플레이)", "d 1 2 (버리기)", "u 1 [카드번호] (소모품 사용)", "x 1 (조커 판매)"]
     if game.can_skip_blind():
         hints.append("skip (블라인드 스킵)")
     hints += ["s (정렬)", "rank (족보표)", "j (보유 정보)", "save (저장 후 종료)", "h (도움말)", "q (그만두기)"]
     print(f"{DIM}" + " | ".join(hints) + f"{RESET}")
+    render_legend()
 
 
 OFFER_KIND_LABELS = {
@@ -282,6 +282,12 @@ def render_inventory(game):
 
 def render_help(phase):
     print(f"{BOLD}도움말{RESET}")
+    print(f"{DIM}(발라트로를 몰라도 괜찮습니다 — 기본 개념부터 정리했습니다){RESET}")
+    print(" · 카드 1~5장으로 포커 족보(페어, 플러시 등)를 만들면 '칩 × 배수'만큼 점수를 얻습니다.")
+    print(" · '블라인드'는 이번 판에서 넘어야 할 목표 점수, '앤티'는 게임 진행 단계(1~8, 오를수록 어려워짐)입니다.")
+    print(" · '조커'는 계속 켜져 있는 패시브 능력, '소모품'(부적/룬/강화석 등)은 원할 때 한 번 사용하는 아이템입니다.")
+    print(" · 목표 점수를 넘기면 상금을 받고 상점에 들러 조커/소모품을 산 뒤 다음 블라인드로 넘어갑니다.")
+    print()
     print("카드/상품 번호는 화면에 표시된 1부터 시작하는 인덱스입니다.")
     if phase == "blind":
         print(" p <번호...>  선택한 1~5장을 플레이해 점수를 냅니다 (예: p 1 3 5)")
