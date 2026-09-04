@@ -1,3 +1,6 @@
+import random
+import time
+
 from .blinds import MAX_ANTE
 from .cards import Suit
 from .consumables import LEVEL_BONUS
@@ -59,6 +62,31 @@ def clear_screen():
 
 def _rule(width=60):
     print(f"{DIM}{'─' * width}{RESET}")
+
+
+FAKE_LOG_LINES = [
+    "Compiling TypeScript sources...",
+    "Waiting for database migration...",
+    "Linting changed files...",
+    "Rebuilding dependency graph...",
+    "Bundling assets...",
+    "Running type checker...",
+    "Restoring npm cache...",
+]
+
+
+def _fake_terminal_header(progress_ratio=None):
+    """실제 빌드/테스트 로그처럼 보이는 위장용 헤더. 사무실에서 흘끗 봐도 게임처럼
+    안 보이도록 상단 배너를 이걸로 대체한다."""
+    now = time.strftime("%H:%M:%S")
+    total = 50
+    if progress_ratio is None:
+        passed = random.randint(30, 49)
+    else:
+        passed = max(1, min(total, round(total * min(1.0, max(0.0, progress_ratio)))))
+    print(f"{DIM}${RESET} npm run test:integration")
+    print(f"{DIM}[{now}]{RESET} Running integration suite... ({GREEN}{passed}/{total} passed{RESET})")
+    print(f"{DIM}[{now}] {random.choice(FAKE_LOG_LINES)}{RESET}")
 
 
 def colorize_card(card):
@@ -141,7 +169,8 @@ def _progress_bar(value, target):
 
 def render_status(game):
     blind = game.current_blind
-    print(f"{BOLD}{CYAN}=== BALALITE — Balatro 팬게임 (비공식) ==={RESET}")
+    ratio = game.round_score / blind.requirement if blind.requirement else 1.0
+    _fake_terminal_header(ratio)
     _rule()
     print(f"Ante {game.ante}/{MAX_ANTE}  {BOLD}{blind.label}{RESET}  목표 점수: {YELLOW}{blind.requirement}{RESET}")
     if game.boss_effect:
@@ -216,7 +245,7 @@ def _offer_line(i, item, game):
 
 
 def render_shop(game):
-    print(f"{BOLD}{CYAN}=== 상점 ==={RESET}")
+    _fake_terminal_header()
     _rule()
     print(f"{blind_clear_line(game)}")
     if game.last_interest:
@@ -241,7 +270,7 @@ def render_shop(game):
 
 def render_pack(game):
     pack = game.pending_pack
-    print(f"{BOLD}{CYAN}=== 팩 개봉 ==={RESET}")
+    _fake_terminal_header()
     _rule()
     pack_type_label = "조커" if pack["pack_type"] == "joker" else "소모품"
     print(f"{pack_type_label} 중 {pack['remaining']}개를 선택하세요.")
