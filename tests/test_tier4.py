@@ -4,10 +4,26 @@ import unittest
 from balalite.blinds import BOSS_EFFECTS, Blind, make_blinds
 from balalite.cards import Card, Rank, Suit
 from balalite.cli import InputError, _handle_blind_command
-from balalite.consumables import CARD_MODIFIER_POOL, RUNES
+from balalite.consumables import (
+    CARD_MODIFIER_POOL,
+    CHARMS,
+    EDITIONERS,
+    ENHANCERS,
+    NEGATIVE_EDITIONERS,
+    RUNES,
+    SEALERS,
+    SPECTRALS,
+)
 from balalite.decks import DECK_POOL, deck_by_key
-from balalite.game import GameState, MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS
-from balalite.jokers import JOKER_POOL
+from balalite.game import (
+    GameState,
+    MAX_CONSUMABLE_SLOTS,
+    MAX_JOKER_SLOTS,
+    _CONSUMABLE_SHOP_WEIGHT_BY_KEY,
+    _weighted_unique_sample,
+)
+from balalite.jokers import JOKER_POOL, RARITY_WEIGHT
+from balalite.packs import PACK_POOL
 from balalite.scoring import HandType
 from balalite.stakes import STAKE_POOL
 
@@ -186,6 +202,91 @@ class TestShopGuaranteedSlots(unittest.TestCase):
             rune_count = sum(1 for o in game.shop_offers if o in RUNES)
             self.assertGreaterEqual(modifier_count, 1)
             self.assertGreaterEqual(rune_count, 1)
+
+
+class TestShopWeightRebalance(unittest.TestCase):
+    def test_consumable_categories_have_equal_total_weight(self):
+        categories = [CHARMS, RUNES, ENHANCERS, EDITIONERS + NEGATIVE_EDITIONERS, SEALERS, SPECTRALS]
+        totals = [
+            sum(_CONSUMABLE_SHOP_WEIGHT_BY_KEY[item.key] for item in category)
+            for category in categories
+        ]
+        for total in totals[1:]:
+            self.assertAlmostEqual(total, totals[0])
+
+    def test_consumable_total_weight_matches_joker_total_weight(self):
+        joker_total = sum(RARITY_WEIGHT[j.rarity] for j in JOKER_POOL)
+        consumable_total = sum(_CONSUMABLE_SHOP_WEIGHT_BY_KEY.values())
+        self.assertAlmostEqual(joker_total, consumable_total)
+
+    def test_small_category_is_not_starved_in_practice(self):
+        # 에디션석(5종)처럼 아이템 수가 적은 카테고리도 룬(12종)과 비슷한 빈도로 등장해야 한다
+        from balalite.consumables import CONSUMABLE_POOL
+
+        game = GameState(seed="weight-rebalance-check")
+        card_pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
+        card_weights = [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL] + [
+            _CONSUMABLE_SHOP_WEIGHT_BY_KEY[c.key] for c in CONSUMABLE_POOL
+        ]
+        editioner_pool = set(EDITIONERS + NEGATIVE_EDITIONERS)
+        rune_pool = set(RUNES)
+        editioner_hits, rune_hits = 0, 0
+        trials = 4000
+        for i in range(trials):
+            game.rng.seed(f"trial-{i}")
+            picks = _weighted_unique_sample(game.rng, card_pool, card_weights, 2)
+            if any(p in editioner_pool for p in picks):
+                editioner_hits += 1
+            if any(p in rune_pool for p in picks):
+                rune_hits += 1
+        # 완전히 똑같을 필요는 없지만, 아이템 개수(5 vs 12) 차이만큼 극단적으로 벌어지면 안 됨
+        self.assertGreater(editioner_hits / trials, 0.08)
+        self.assertLess(abs(editioner_hits - rune_hits) / trials, 0.05)
+
+
+class TestStandardCardPack(unittest.TestCase):
+    def _pack(self, key):
+        return next(p for p in PACK_POOL if p.key == key)
+
+    def test_opening_standard_pack_generates_playing_cards(self):
+        game = GameState(seed="card-pack-open")
+        game._open_pack(self._pack("pack_standard"))
+        self.assertEqual(game.phase, "pack")
+        self.assertEqual(len(game.pending_pack["items"]), 3)
+        for item in game.pending_pack["items"]:
+            self.assertIsInstance(item, Card)
+
+    def test_picking_a_card_adds_it_to_the_deck_permanently(self):
+        game = GameState(seed="card-pack-pick")
+        total_before = len(game.deck.cards) + len(game.hand) + len(game.deck.discard_pile)
+        game._open_pack(self._pack("pack_standard"))
+        message = game.pick_pack_item(0)
+        self.assertIn("덱에 추가", message)
+        total_after = len(game.deck.cards) + len(game.hand) + len(game.deck.discard_pile)
+        self.assertEqual(total_after, total_before + 1)
+        self.assertEqual(game.phase, "shop")
+
+    def test_jumbo_standard_pack_requires_two_picks(self):
+        game = GameState(seed="card-pack-jumbo")
+        total_before = len(game.deck.cards) + len(game.hand) + len(game.deck.discard_pile)
+        game._open_pack(self._pack("pack_standard_jumbo"))
+        game.pick_pack_item(0)
+        self.assertEqual(game.phase, "pack")
+        game.pick_pack_item(0)
+        self.assertEqual(game.phase, "shop")
+        total_after = len(game.deck.cards) + len(game.hand) + len(game.deck.discard_pile)
+        self.assertEqual(total_after, total_before + 2)
+
+    def test_grown_deck_survives_save_load_round_trip(self):
+        game = GameState(seed="card-pack-save")
+        game._open_pack(self._pack("pack_standard"))
+        game.pick_pack_item(0)
+        total_before = len(game.deck.cards) + len(game.hand) + len(game.deck.discard_pile)
+
+        restored = GameState.from_dict(json.loads(json.dumps(game.to_dict())))
+        total_after = len(restored.deck.cards) + len(restored.hand) + len(restored.deck.discard_pile)
+        self.assertEqual(total_after, total_before)
+        self.assertEqual(total_after, 53)
 
 
 class TestDeckStakeSaveLoad(unittest.TestCase):

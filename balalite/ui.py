@@ -322,16 +322,23 @@ def render_shop(game):
     )
 
 
+_PACK_TYPE_LABELS = {"joker": "조커", "consumable": "소모품", "card": "카드"}
+
+
 def render_pack(game):
     pack = game.pending_pack
     _fake_terminal_header()
     _rule()
-    pack_type_label = "조커" if pack["pack_type"] == "joker" else "소모품"
+    pack_type_label = _PACK_TYPE_LABELS.get(pack["pack_type"], pack["pack_type"])
     print(f"{pack_type_label} 중 {pack['remaining']}개를 선택하세요.")
     print()
-    for i, item in enumerate(pack["items"]):
-        kind_tag = _offer_kind_tag(item)
-        print(f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}")
+    if pack["pack_type"] == "card":
+        for i, card in enumerate(pack["items"]):
+            print(f" {i + 1}: {colorize_card(card)}")
+    else:
+        for i, item in enumerate(pack["items"]):
+            kind_tag = _offer_kind_tag(item)
+            print(f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}")
     _rule()
     if game.shop_message:
         print(f"{MAGENTA}{game.shop_message}{RESET}")

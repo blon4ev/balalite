@@ -2,8 +2,32 @@ import dataclasses
 import random
 
 from .blinds import MAX_ANTE, make_blinds
-from .cards import Deck, card_from_dict, card_to_dict
-from .consumables import CARD_MODIFIER_POOL, CONSUMABLE_POOL, ENHANCEMENT_DESCRIPTIONS, LEVEL_BONUS, RUNES
+from .cards import (
+    Card,
+    Deck,
+    ENHANCEMENT_LABELS,
+    EDITION_LABELS,
+    Rank,
+    SEAL_LABELS,
+    Suit,
+    card_from_dict,
+    card_to_dict,
+)
+from .consumables import (
+    CARD_MODIFIER_POOL,
+    CHARMS,
+    CONSUMABLE_POOL,
+    EDITIONERS,
+    ENHANCEMENT_DESCRIPTIONS,
+    ENHANCERS,
+    EDITION_DESCRIPTIONS,
+    LEVEL_BONUS,
+    NEGATIVE_EDITIONERS,
+    RUNES,
+    SEALERS,
+    SEAL_DESCRIPTIONS,
+    SPECTRALS,
+)
 from .decks import deck_by_key
 from .jokers import JOKER_POOL, RARITY_WEIGHT, apply_jokers
 from .packs import PACK_POOL
@@ -25,9 +49,58 @@ REROLL_COST_INCREMENT = 1  # 같은 상점 방문에서 리롤할 때마다 비�
 DEFAULT_INTEREST_CAP = 5
 GLASS_BREAK_CHANCE = 0.25
 GOLD_SEAL_INCOME = 3
-CONSUMABLE_SHOP_WEIGHT = 5
+# 카드 팩에서 뽑히는 새 플레잉 카드가 강화/에디션/씰을 미리 달고 나올 확률
+PACK_CARD_ENHANCEMENT_CHANCE = 0.30
+PACK_CARD_EDITION_CHANCE = 0.15
+PACK_CARD_SEAL_CHANCE = 0.15
 # 3단계 이상 스테이크에서 블라인드 목표 점수에 곱해지는 배율
 STAKE_BLIND_MULTIPLIER = 1.10
+
+# 상점 카드 슬롯에서 "조커 전체"와 "소모품 전체"가 동일한 비중(50:50)으로 등장하고,
+# 소모품 안에서는 부적/룬/강화석/에디션석/인장석/스펙트럴 6개 카테고리가 서로 동일한
+# 비중을 갖도록 정규화한 가중치. (예전에는 소모품 1개당 가중치가 고정값이라 아이템
+# 개수가 많은 카테고리(룬 12종)일수록 유리하고 적은 카테고리(에디션석 5종)는
+# 상대적으로 덜 등장하는 문제가 있었다.)
+_CONSUMABLE_CATEGORIES = [CHARMS, RUNES, ENHANCERS, EDITIONERS + NEGATIVE_EDITIONERS, SEALERS, SPECTRALS]
+
+
+def _build_consumable_shop_weights():
+    joker_total_weight = sum(RARITY_WEIGHT[j.rarity] for j in JOKER_POOL)
+    per_category_weight = joker_total_weight / len(_CONSUMABLE_CATEGORIES)
+    weights = {}
+    for category in _CONSUMABLE_CATEGORIES:
+        per_item_weight = per_category_weight / len(category)
+        for item in category:
+            weights[item.key] = per_item_weight
+    return weights
+
+
+_CONSUMABLE_SHOP_WEIGHT_BY_KEY = _build_consumable_shop_weights()
+
+
+def _random_playing_card(rng):
+    """카드 팩(스탠다드 팩)에서 뽑히는 무작위 플레잉 카드. 발라트로처럼 일정 확률로
+    강화/에디션/씰이 미리 붙은 채로 나올 수 있다."""
+    card = Card(rng.choice(list(Rank)), rng.choice(list(Suit)))
+    if rng.random() < PACK_CARD_ENHANCEMENT_CHANCE:
+        card.enhancement = rng.choice(list(ENHANCEMENT_DESCRIPTIONS.keys()))
+    if rng.random() < PACK_CARD_EDITION_CHANCE:
+        card.edition = rng.choice(list(EDITION_DESCRIPTIONS.keys()))
+    if rng.random() < PACK_CARD_SEAL_CHANCE:
+        card.seal = rng.choice(list(SEAL_DESCRIPTIONS.keys()))
+    return card
+
+
+def _describe_new_card(card):
+    extras = []
+    if card.enhancement:
+        extras.append(f"{ENHANCEMENT_LABELS[card.enhancement]} 강화")
+    if card.edition:
+        extras.append(f"{EDITION_LABELS[card.edition]} 에디션")
+    if card.seal:
+        extras.append(f"{SEAL_LABELS[card.seal]} 씰")
+    suffix = f" ({', '.join(extras)})" if extras else ""
+    return f"{card}{suffix}"
 
 
 def _weighted_unique_sample(rng, items, weights, k):
@@ -397,7 +470,7 @@ class GameState:
         card_pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
         card_weights = (
             [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL]
-            + [CONSUMABLE_SHOP_WEIGHT] * len(CONSUMABLE_POOL)
+            + [_CONSUMABLE_SHOP_WEIGHT_BY_KEY[c.key] for c in CONSUMABLE_POOL]
         )
         card_slots = min(self.shop_offer_count, len(card_pool))
         self.shop_offers = _weighted_unique_sample(self.rng, card_pool, card_weights, card_slots)
@@ -477,10 +550,13 @@ class GameState:
         if pack.pack_type == "joker":
             source_pool = JOKER_POOL
             weights = [RARITY_WEIGHT[j.rarity] for j in source_pool]
-        else:
+            items = _weighted_unique_sample(self.rng, source_pool, weights, pack.show_count)
+        elif pack.pack_type == "consumable":
             source_pool = CONSUMABLE_POOL
             weights = [1] * len(source_pool)
-        items = _weighted_unique_sample(self.rng, source_pool, weights, pack.show_count)
+            items = _weighted_unique_sample(self.rng, source_pool, weights, pack.show_count)
+        else:  # "card": 새로 생성한 플레잉 카드라 기존 풀에서 뽑지 않는다
+            items = [_random_playing_card(self.rng) for _ in range(pack.show_count)]
         self.pending_pack = {
             "pack_type": pack.pack_type,
             "items": items,
@@ -505,10 +581,15 @@ class GameState:
         del items[index]
         if pack_type == "joker":
             self.jokers.append(item)
-        else:
+            message = f"'{item.name}' 획득!"
+        elif pack_type == "consumable":
             self.consumables.append(item)
+            message = f"'{item.name}' 획득!"
+        else:  # card: 덱에 새 카드로 영구히 추가된다 (52장보다 많아질 수 있음)
+            self.deck.cards.append(item)
+            self.rng.shuffle(self.deck.cards)
+            message = f"{_describe_new_card(item)}을(를) 덱에 추가했습니다!"
         self.pending_pack["remaining"] -= 1
-        message = f"'{item.name}' 획득!"
         if self.pending_pack["remaining"] <= 0 or not items:
             self.phase = "shop"
             self.pending_pack = None
