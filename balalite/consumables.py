@@ -186,9 +186,7 @@ def _fortune_spectral(game, card=None):
 
 
 def _clone_spectral(game, card=None):
-    from .game import MAX_JOKER_SLOTS
-
-    if game.jokers and game.joker_slot_count() < MAX_JOKER_SLOTS:
+    if game.jokers and game.joker_slot_count() < game.max_joker_slots:
         game.jokers.append(game.rng.choice(game.jokers))
     else:
         game.money += 10

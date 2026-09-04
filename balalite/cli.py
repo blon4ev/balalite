@@ -1,5 +1,7 @@
 from . import save, ui
+from .decks import DECK_POOL
 from .game import GameState
+from .stakes import STAKE_POOL
 
 
 class InputError(Exception):
@@ -49,6 +51,9 @@ def _save_and_quit(game):
 def _handle_blind_command(game, cmd, args):
     if cmd in ("p", "play"):
         indices = _parse_indices(args, len(game.hand))
+        max_cards = game.boss_effect.max_cards_per_play if game.boss_effect else None
+        if max_cards is not None and len(indices) > max_cards:
+            raise InputError(f"이 보스 블라인드에서는 한 번에 최대 {max_cards}장까지만 낼 수 있습니다.")
         game.play_cards(indices)
     elif cmd in ("d", "discard"):
         if game.discards_left <= 0:
@@ -206,6 +211,48 @@ def _prompt_start():
     return "new", (raw or None)
 
 
+def _prompt_deck():
+    print()
+    print(f"{ui.BOLD}덱을 선택하세요{ui.RESET}")
+    for i, d in enumerate(DECK_POOL):
+        print(f" {i + 1}: {ui.BOLD}{d.name}{ui.RESET} — {d.description}")
+    try:
+        raw = input("번호를 입력하세요 (엔터: 1번 표준 덱): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise SystemExit
+    if not raw:
+        return DECK_POOL[0].key
+    try:
+        idx = int(raw) - 1
+        if 0 <= idx < len(DECK_POOL):
+            return DECK_POOL[idx].key
+    except ValueError:
+        pass
+    return DECK_POOL[0].key
+
+
+def _prompt_stake():
+    print()
+    print(f"{ui.BOLD}난이도(스테이크)를 선택하세요{ui.RESET} — 숫자가 높을수록 어렵고, 효과는 아래로 누적됩니다.")
+    for s in STAKE_POOL:
+        print(f" {s.level}: {ui.BOLD}{s.name}{ui.RESET} — {s.description}")
+    try:
+        raw = input("번호를 입력하세요 (엔터: 1단계): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        raise SystemExit
+    if not raw:
+        return 1
+    try:
+        level = int(raw)
+        if 1 <= level <= len(STAKE_POOL):
+            return level
+    except ValueError:
+        pass
+    return 1
+
+
 def main():
     ui.render_title()
     action, seed = _prompt_start()
@@ -218,7 +265,12 @@ def main():
             print("저장 파일을 불러오지 못했습니다. 새 게임을 시작합니다.")
             game = GameState(seed=None)
     else:
-        game = GameState(seed=seed)
+        try:
+            deck_key = _prompt_deck()
+            stake_level = _prompt_stake()
+        except SystemExit:
+            return
+        game = GameState(seed=seed, deck_key=deck_key, stake_level=stake_level)
     _run_loop(game)
 
 

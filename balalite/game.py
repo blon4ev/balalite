@@ -3,10 +3,12 @@ import random
 
 from .blinds import MAX_ANTE, make_blinds
 from .cards import Deck, card_from_dict, card_to_dict
-from .consumables import CARD_MODIFIER_POOL, CONSUMABLE_POOL, LEVEL_BONUS
+from .consumables import CARD_MODIFIER_POOL, CONSUMABLE_POOL, ENHANCEMENT_DESCRIPTIONS, LEVEL_BONUS
+from .decks import deck_by_key
 from .jokers import JOKER_POOL, RARITY_WEIGHT, apply_jokers
 from .packs import PACK_POOL
 from .scoring import HandType, evaluate_hand
+from .stakes import STAKE_POOL, stake_by_level
 from .tags import TAG_POOL
 from .vouchers import VOUCHER_POOL
 
@@ -19,10 +21,13 @@ MAX_CONSUMABLE_SLOTS = 2
 SHOP_CARD_SLOTS = 2  # 조커·소모품이 나오는 카드 슬롯 수 (바우처로 증가 가능)
 SHOP_PACK_SLOTS = 2  # 부스터 팩 전용 슬롯 수 (고정)
 SHOP_REROLL_COST = 2
+REROLL_COST_INCREMENT = 1  # 같은 상점 방문에서 리롤할 때마다 비용이 이만큼씩 오름
 DEFAULT_INTEREST_CAP = 5
 GLASS_BREAK_CHANCE = 0.25
 GOLD_SEAL_INCOME = 3
 CONSUMABLE_SHOP_WEIGHT = 5
+# 3단계 이상 스테이크에서 블라인드 목표 점수에 곱해지는 배율
+STAKE_BLIND_MULTIPLIER = 1.10
 
 
 def _weighted_unique_sample(rng, items, weights, k):
@@ -80,25 +85,52 @@ def _offer_from_dict(data):
 
 
 class GameState:
-    def __init__(self, seed=None):
+    def __init__(self, seed=None, deck_key="deck_standard", stake_level=1):
         self.rng = random.Random(seed)
         self.seed = seed
+
+        deck_type = deck_by_key(deck_key)
+        stake = stake_by_level(max(1, min(len(STAKE_POOL), stake_level)))
+        self.deck_key = deck_type.key
+        self.stake_level = stake.level
+        self.intensify_boss = self.stake_level >= 5
+
         self.deck = Deck(self.rng)
+        if deck_type.pre_enhanced_card_count:
+            sample = self.rng.sample(
+                self.deck.cards, min(deck_type.pre_enhanced_card_count, len(self.deck.cards))
+            )
+            for c in sample:
+                c.enhancement = self.rng.choice(list(ENHANCEMENT_DESCRIPTIONS.keys()))
+
+        self.blind_requirement_multiplier = deck_type.blind_requirement_multiplier * (
+            STAKE_BLIND_MULTIPLIER if self.stake_level >= 3 else 1.0
+        )
         self.ante = 1
-        self.blinds = make_blinds(self.ante)
+        self.blinds = make_blinds(self.ante, self.blind_requirement_multiplier, self.intensify_boss)
         self.blind_index = 0
-        self.money = STARTING_MONEY
+        self.money = max(0, STARTING_MONEY + deck_type.money_delta)
         self.jokers = []
+        if deck_type.starting_joker_rarity:
+            candidates = [j for j in JOKER_POOL if j.rarity == deck_type.starting_joker_rarity]
+            if candidates:
+                self.jokers.append(self.rng.choice(candidates))
         self.consumables = []
         self.hand_levels = {}
         self.owned_vouchers = set()
 
-        self.base_hand_size = HAND_SIZE
+        self.base_hand_size = max(1, HAND_SIZE + deck_type.hand_size_delta)
         self.base_plays = PLAYS_PER_ROUND
-        self.base_discards = DISCARDS_PER_ROUND
+        self.base_discards = max(0, DISCARDS_PER_ROUND - (1 if self.stake_level >= 4 else 0))
+        self.max_joker_slots = max(
+            1, MAX_JOKER_SLOTS + deck_type.joker_slot_delta - (1 if self.stake_level >= 5 else 0)
+        )
+        self.max_consumable_slots = max(0, MAX_CONSUMABLE_SLOTS + deck_type.consumable_slot_delta)
         self.shop_offer_count = SHOP_CARD_SLOTS
         self.shop_discount = 0.0
         self.interest_cap = DEFAULT_INTEREST_CAP
+        self.base_reroll_cost = max(1, SHOP_REROLL_COST + deck_type.reroll_cost_delta)
+        self.reroll_cost = self.base_reroll_cost
 
         self.hand = []
         self.hand_size = HAND_SIZE
@@ -183,7 +215,11 @@ class GameState:
             card_chip = 0
             card_mult_add = 0
             card_mult_mul = 1.0
-            if not (effect and effect.debuff_suit and c.suit is effect.debuff_suit):
+            debuffed = effect and (
+                (effect.debuff_suit and c.suit is effect.debuff_suit)
+                or (effect.debuff_ranks and c.rank in effect.debuff_ranks)
+            )
+            if not debuffed:
                 card_chip += c.rank.chips
             if c.enhancement == "bonus":
                 card_chip += 30
@@ -216,6 +252,9 @@ class GameState:
         base_chips = hand_type.base_chips + level * level_chips + chip_sum
         base_mult = hand_type.base_mult + level * level_mult + mult_bonus
         chips, mult = apply_jokers(self.jokers, cards, scoring_cards, hand_type, base_chips, base_mult, game=self)
+
+        if effect and effect.joker_mult_scale != 1.0:
+            mult = base_mult + (mult - base_mult) * effect.joker_mult_scale
 
         if self.mist_active:
             chips = base_chips + (chips - base_chips) * 2
@@ -256,7 +295,7 @@ class GameState:
             del self.hand[i]
         self.deck.discard(cards)
         for c in cards:
-            if c.seal == "blue" and self.consumable_slot_count() < MAX_CONSUMABLE_SLOTS:
+            if c.seal == "blue" and self.consumable_slot_count() < self.max_consumable_slots:
                 self.consumables.append(self.rng.choice(CONSUMABLE_POOL))
         self.hand.extend(self.deck.draw(len(indices)))
         self.sort_hand(self.sort_mode)
@@ -313,7 +352,10 @@ class GameState:
 
     def _check_round_progress(self):
         if self.round_score >= self.current_blind.requirement:
-            self.last_reward = 3 + self.discards_left
+            if self.stake_level >= 2 and self.current_blind.kind == "small":
+                self.last_reward = 0
+            else:
+                self.last_reward = 3 + self.discards_left
             self.money += self.last_reward
             self.last_interest = min(self.money // 5, self.interest_cap)
             self.money += self.last_interest
@@ -324,6 +366,7 @@ class GameState:
     def _enter_shop(self):
         self.phase = "shop"
         self.shop_message = ""
+        self.reroll_cost = self.base_reroll_cost
         self._roll_shop_offers()
 
     def _roll_shop_offers(self):
@@ -363,10 +406,11 @@ class GameState:
             self.shop_offers.append(self.rng.choice(voucher_candidates))
 
     def reroll_shop(self):
-        if self.money < SHOP_REROLL_COST:
+        if self.money < self.reroll_cost:
             self.shop_message = "돈이 부족합니다."
             return
-        self.money -= SHOP_REROLL_COST
+        self.money -= self.reroll_cost
+        self.reroll_cost += REROLL_COST_INCREMENT
         self._roll_shop_offers()
         self.shop_message = "상점을 새로고침했습니다."
 
@@ -402,10 +446,10 @@ class GameState:
             return
 
         is_joker = hasattr(item, "timing")
-        if is_joker and self.joker_slot_count() >= MAX_JOKER_SLOTS:
+        if is_joker and self.joker_slot_count() >= self.max_joker_slots:
             self.shop_message = "조커 슬롯이 가득 찼습니다."
             return
-        if not is_joker and self.consumable_slot_count() >= MAX_CONSUMABLE_SLOTS:
+        if not is_joker and self.consumable_slot_count() >= self.max_consumable_slots:
             self.shop_message = "소모품 슬롯이 가득 찼습니다."
             return
         if self.money < cost:
@@ -444,9 +488,9 @@ class GameState:
             return "잘못된 번호입니다."
         item = items[index]
         pack_type = self.pending_pack["pack_type"]
-        if pack_type == "joker" and self.joker_slot_count() >= MAX_JOKER_SLOTS:
+        if pack_type == "joker" and self.joker_slot_count() >= self.max_joker_slots:
             return "조커 슬롯이 가득 찼습니다."
-        if pack_type == "consumable" and self.consumable_slot_count() >= MAX_CONSUMABLE_SLOTS:
+        if pack_type == "consumable" and self.consumable_slot_count() >= self.max_consumable_slots:
             return "소모품 슬롯이 가득 찼습니다."
 
         del items[index]
@@ -476,7 +520,7 @@ class GameState:
                 self.phase = "victory"
                 return
             self.ante += 1
-            self.blinds = make_blinds(self.ante)
+            self.blinds = make_blinds(self.ante, self.blind_requirement_multiplier, self.intensify_boss)
             self.blind_index = 0
         self._start_blind_round()
 
@@ -487,6 +531,11 @@ class GameState:
         version, internal_state, gauss_next = self.rng.getstate()
         return {
             "seed": self.seed,
+            "deck_key": self.deck_key,
+            "stake_level": self.stake_level,
+            "max_joker_slots": self.max_joker_slots,
+            "max_consumable_slots": self.max_consumable_slots,
+            "reroll_cost": self.reroll_cost,
             "rng_state": [version, list(internal_state), gauss_next],
             "ante": self.ante,
             "blind_index": self.blind_index,
@@ -526,11 +575,22 @@ class GameState:
         game.rng = random.Random()
         game.rng.setstate((version, tuple(internal_state), gauss_next))
         game.seed = data["seed"]
+        game.deck_key = data.get("deck_key", "deck_standard")
+        game.stake_level = data.get("stake_level", 1)
+        deck_type = deck_by_key(game.deck_key)
+        game.blind_requirement_multiplier = deck_type.blind_requirement_multiplier * (
+            STAKE_BLIND_MULTIPLIER if game.stake_level >= 3 else 1.0
+        )
+        game.intensify_boss = game.stake_level >= 5
+        game.base_reroll_cost = max(1, SHOP_REROLL_COST + deck_type.reroll_cost_delta)
+        game.max_joker_slots = data.get("max_joker_slots", MAX_JOKER_SLOTS)
+        game.max_consumable_slots = data.get("max_consumable_slots", MAX_CONSUMABLE_SLOTS)
+        game.reroll_cost = data.get("reroll_cost", game.base_reroll_cost)
         game.deck = Deck(game.rng)
         game.deck.cards = [card_from_dict(d) for d in data["deck_cards"]]
         game.deck.discard_pile = [card_from_dict(d) for d in data["deck_discard_pile"]]
         game.ante = data["ante"]
-        game.blinds = make_blinds(game.ante)
+        game.blinds = make_blinds(game.ante, game.blind_requirement_multiplier, game.intensify_boss)
         game.blind_index = data["blind_index"]
         game.money = data["money"]
         game.jokers = [

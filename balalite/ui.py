@@ -4,9 +4,10 @@ import time
 from .blinds import MAX_ANTE
 from .cards import Suit
 from .consumables import LEVEL_BONUS
-from .game import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS, SHOP_REROLL_COST
+from .decks import deck_by_key
 from .jokers import RARITY_LABEL
 from .scoring import HandType
+from .stakes import stake_by_level
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -189,13 +190,13 @@ def render_status(game):
         if game.jokers
         else "(없음)"
     )
-    print(f"조커 ({game.joker_slot_count()}/{MAX_JOKER_SLOTS}): {joker_str}")
+    print(f"조커 ({game.joker_slot_count()}/{game.max_joker_slots}): {joker_str}")
     consumable_str = (
         ", ".join(f"{DIM}{i + 1}:{RESET}{_edition_marked_name(c)}" for i, c in enumerate(game.consumables))
         if game.consumables
         else "(없음)"
     )
-    print(f"소모품 ({game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS}): {consumable_str}")
+    print(f"소모품 ({game.consumable_slot_count()}/{game.max_consumable_slots}): {consumable_str}")
     if game.last_result:
         hand_type, chips, mult, gained, destroyed = game.last_result
         remaining = max(0, blind.requirement - game.round_score)
@@ -292,8 +293,8 @@ def render_shop(game):
     if game.last_interest:
         print(f"{GREEN}이자 수입: +${game.last_interest}{RESET}")
     print(
-        f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {game.joker_slot_count()}/{MAX_JOKER_SLOTS}   "
-        f"소모품 슬롯: {game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS}"
+        f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {game.joker_slot_count()}/{game.max_joker_slots}   "
+        f"소모품 슬롯: {game.consumable_slot_count()}/{game.max_consumable_slots}"
     )
     joker_str = (
         ", ".join(f"{DIM}{i + 1}:{RESET}{_edition_marked_name(j)}" for i, j in enumerate(game.jokers))
@@ -316,7 +317,7 @@ def render_shop(game):
     if game.shop_message:
         print(f"{MAGENTA}{game.shop_message}{RESET}")
     print(
-        f"{DIM}b 1 (구매) | r (리롤, ${SHOP_REROLL_COST}) | x 1 (조커 판매) | c (다음 블라인드로) | "
+        f"{DIM}b 1 (구매) | r (리롤, ${game.reroll_cost}) | x 1 (조커 판매) | c (다음 블라인드로) | "
         f"j (보유 정보) | save (저장 후 종료) | h (도움말) | q (그만두기){RESET}"
     )
 
@@ -343,7 +344,12 @@ def blind_clear_line(game):
 
 
 def render_inventory(game):
-    print(f"{BOLD}보유 조커 ({game.joker_slot_count()}/{MAX_JOKER_SLOTS} 슬롯 사용){RESET}")
+    deck = deck_by_key(game.deck_key)
+    stake = stake_by_level(game.stake_level)
+    print(f"{BOLD}덱{RESET}: {deck.name} — {deck.description}")
+    print(f"{BOLD}스테이크{RESET}: {stake.name} — {stake.description}")
+    print()
+    print(f"{BOLD}보유 조커 ({game.joker_slot_count()}/{game.max_joker_slots} 슬롯 사용){RESET}")
     if not game.jokers:
         print("(없음)")
     for i, j in enumerate(game.jokers):
@@ -353,7 +359,7 @@ def render_inventory(game):
             f"{j.description} ({YELLOW}${j.cost}{RESET})"
         )
     print()
-    print(f"{BOLD}보유 소모품 ({game.consumable_slot_count()}/{MAX_CONSUMABLE_SLOTS} 슬롯 사용){RESET}")
+    print(f"{BOLD}보유 소모품 ({game.consumable_slot_count()}/{game.max_consumable_slots} 슬롯 사용){RESET}")
     if not game.consumables:
         print("(없음)")
     for i, c in enumerate(game.consumables):
@@ -399,7 +405,7 @@ def render_help(phase):
         print(" x <번호>     보유한 조커를 판매합니다 (화면의 조커 목록 번호 사용, 구매가의 절반 환불, 예: x 1)")
     elif phase == "shop":
         print(" b <번호>     상점에서 해당 번호의 상품을 구매합니다 (예: b 1)")
-        print(f" r            상점을 새로고침합니다 (${SHOP_REROLL_COST})")
+        print(" r            상점을 새로고침합니다 (같은 상점 방문 내에서 리롤할 때마다 비용이 오릅니다)")
         print(" c            다음 블라인드로 진행합니다")
         print(" save         현재 진행 상황을 저장하고 게임을 종료합니다 (다음 실행 시 이어하기)")
         print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")

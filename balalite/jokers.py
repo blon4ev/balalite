@@ -524,9 +524,7 @@ def _odd_count(ctx):
 
 
 def _full_slots_bonus(ctx):
-    from .game import MAX_JOKER_SLOTS
-
-    if ctx.game and ctx.game.joker_slot_count() >= MAX_JOKER_SLOTS:
+    if ctx.game and ctx.game.joker_slot_count() >= ctx.game.max_joker_slots:
         ctx.mult *= 1.5
 
 
