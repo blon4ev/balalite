@@ -65,7 +65,7 @@ class Card:
     seal: Optional[str] = None
 
     def __str__(self):
-        return f"{self.rank.label}{self.suit.symbol}"
+        return f"{self.suit.symbol}{self.rank.label}"
 
 
 def card_to_dict(card):

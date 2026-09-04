@@ -67,7 +67,7 @@ def colorize_card(card):
     if card.seal:
         seal_color = SEAL_DOT_COLOR.get(card.seal, WHITE)
         prefix = f"{seal_color}●{RESET}"
-    text = f"{prefix}{color}[{card.rank.label}{card.suit.symbol}]{RESET}"
+    text = f"{prefix}{color}[{card.suit.symbol}{card.rank.label}]{RESET}"
     if card.enhancement:
         tag_color = ENHANCEMENT_TAG_COLOR.get(card.enhancement, WHITE)
         letter = ENHANCEMENT_TAG_LETTER.get(card.enhancement, "?")
