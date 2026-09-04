@@ -1,5 +1,5 @@
+from . import save, ui
 from .game import GameState
-from . import ui
 
 
 class InputError(Exception):
@@ -33,7 +33,17 @@ def _parse_single_index(args, label="번호"):
 
 
 def _pause():
-    input(f"{ui.DIM}(엔터를 눌러 계속){ui.RESET}")
+    try:
+        input(f"{ui.DIM}(엔터를 눌러 계속){ui.RESET}")
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit
+
+
+def _save_and_quit(game):
+    save.save_game(game)
+    print("저장했습니다. 다음 실행 시 이어할 수 있습니다.")
+    _pause()
+    raise SystemExit
 
 
 def _handle_blind_command(game, cmd, args):
@@ -67,6 +77,8 @@ def _handle_blind_command(game, cmd, args):
         _pause()
     elif cmd in ("s", "sort"):
         game.sort_hand("suit" if game.sort_mode == "rank" else "rank")
+    elif cmd in ("save",):
+        _save_and_quit(game)
     elif cmd in ("j", "jokers", "inventory"):
         ui.render_inventory(game)
         _pause()
@@ -90,11 +102,35 @@ def _handle_shop_command(game, cmd, args):
         game.shop_message = game.sell_joker(n)
     elif cmd in ("c", "continue"):
         game.continue_from_shop()
+    elif cmd in ("save",):
+        _save_and_quit(game)
     elif cmd in ("j", "jokers", "inventory"):
         ui.render_inventory(game)
         _pause()
     elif cmd in ("h", "help"):
         ui.render_help("shop")
+        _pause()
+    elif cmd in ("q", "quit"):
+        raise SystemExit
+    else:
+        raise InputError("알 수 없는 명령어입니다. h를 입력해 도움말을 확인하세요.")
+
+
+def _handle_pack_command(game, cmd, args):
+    if cmd in ("pick", "b"):
+        n = _parse_single_index(args, "선택할 상품 번호")
+        message = game.pick_pack_item(n)
+        print(message)
+        _pause()
+    elif cmd in ("skip",):
+        message = game.skip_pack()
+        print(message)
+        _pause()
+    elif cmd in ("j", "jokers", "inventory"):
+        ui.render_inventory(game)
+        _pause()
+    elif cmd in ("h", "help"):
+        ui.render_help("pack")
         _pause()
     elif cmd in ("q", "quit"):
         raise SystemExit
@@ -111,6 +147,8 @@ def _run_loop(game):
             ui.render_hand_prompt(game)
         elif game.phase == "shop":
             ui.render_shop(game)
+        elif game.phase == "pack":
+            ui.render_pack(game)
 
         if error:
             print(f"{ui.RED}{error}{ui.RESET}")
@@ -132,6 +170,8 @@ def _run_loop(game):
                 _handle_blind_command(game, cmd, args)
             elif game.phase == "shop":
                 _handle_shop_command(game, cmd, args)
+            elif game.phase == "pack":
+                _handle_pack_command(game, cmd, args)
         except InputError as e:
             error = str(e)
         except SystemExit:
@@ -139,25 +179,40 @@ def _run_loop(game):
 
     ui.clear_screen()
     ui.render_end_screen(game)
+    save.delete_save()
 
 
-def _prompt_seed():
+def _prompt_start():
+    has_save = save.has_save()
+    if has_save:
+        prompt = "이어하기: c | 새 게임: 엔터(또는 시드 문자열) | 종료: q\n> "
+    else:
+        prompt = "새 게임을 시작하려면 엔터, 시드를 정해서 시작하려면 시드 문자열, 종료하려면 q: "
     try:
-        raw = input("새 게임을 시작하려면 엔터, 시드를 정해서 시작하려면 시드 문자열, 종료하려면 q: ").strip()
+        raw = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
         print()
-        return "quit"
+        return "quit", None
     if raw.lower() == "q":
-        return "quit"
-    return raw or None
+        return "quit", None
+    if has_save and raw.lower() == "c":
+        return "continue", None
+    return "new", (raw or None)
 
 
 def main():
     ui.render_title()
-    seed = _prompt_seed()
-    if seed == "quit":
+    action, seed = _prompt_start()
+    if action == "quit":
         return
-    game = GameState(seed=seed)
+    if action == "continue":
+        try:
+            game = save.load_game()
+        except Exception:
+            print("저장 파일을 불러오지 못했습니다. 새 게임을 시작합니다.")
+            game = GameState(seed=None)
+    else:
+        game = GameState(seed=seed)
     _run_loop(game)
 
 

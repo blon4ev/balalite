@@ -30,6 +30,13 @@ EDITION_DESCRIPTIONS = {
     "polychrome": "이 카드가 점수에 포함되면 Mult x1.5",
 }
 
+# 카드 씰 종류와 설명 (강화/에디션과 별개인 세 번째 슬롯, game.py에서 처리)
+SEAL_DESCRIPTIONS = {
+    "red": "이 카드가 점수에 포함되면 강화·에디션 효과가 한 번 더(레트리거) 적용됨",
+    "gold": "이 카드를 플레이할 때마다 즉시 +$3",
+    "blue": "이 카드를 버리면 무작위 소모품 1개를 무료로 획득 (슬롯 여유 시)",
+}
+
 
 @dataclass(frozen=True)
 class Consumable:
@@ -200,4 +207,23 @@ SPECTRALS: List[Consumable] = [
     ),
 ]
 
-CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES + ENHANCERS + EDITIONERS + SPECTRALS
+def _make_sealer_effect(seal):
+    def effect(game, card=None):
+        card.seal = seal
+    return effect
+
+
+SEALERS: List[Consumable] = [
+    Consumable(
+        f"sealer_{key}",
+        f"{label} 인장석",
+        f"손패 카드 1장에 씰을 부여합니다 — {SEAL_DESCRIPTIONS[key]}",
+        8,
+        "sealer",
+        _make_sealer_effect(key),
+        needs_target=True,
+    )
+    for key, label in [("red", "적색"), ("gold", "금색"), ("blue", "청색")]
+]
+
+CONSUMABLE_POOL: List[Consumable] = CHARMS + RUNES + ENHANCERS + EDITIONERS + SEALERS + SPECTRALS

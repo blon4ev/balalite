@@ -1,10 +1,11 @@
 import random
 
 from .blinds import MAX_ANTE, make_blinds
-from .cards import Deck
+from .cards import Deck, card_from_dict, card_to_dict
 from .consumables import CONSUMABLE_POOL, LEVEL_BONUS
 from .jokers import JOKER_POOL, RARITY_WEIGHT, apply_jokers
-from .scoring import evaluate_hand
+from .packs import PACK_POOL
+from .scoring import HandType, evaluate_hand
 from .tags import TAG_POOL
 from .vouchers import VOUCHER_POOL
 
@@ -18,7 +19,9 @@ SHOP_OFFER_COUNT = 4
 SHOP_REROLL_COST = 2
 DEFAULT_INTEREST_CAP = 5
 GLASS_BREAK_CHANCE = 0.25
+GOLD_SEAL_INCOME = 3
 CONSUMABLE_SHOP_WEIGHT = 5
+PACK_SHOP_WEIGHT = 4
 
 
 def _weighted_unique_sample(rng, items, weights, k):
@@ -35,6 +38,44 @@ def _weighted_unique_sample(rng, items, weights, k):
                 del remaining[i]
                 break
     return chosen
+
+
+def _joker_by_key(key):
+    return next(j for j in JOKER_POOL if j.key == key)
+
+
+def _consumable_by_key(key):
+    return next(c for c in CONSUMABLE_POOL if c.key == key)
+
+
+def _voucher_by_key(key):
+    return next(v for v in VOUCHER_POOL if v.key == key)
+
+
+def _pack_by_key(key):
+    return next(p for p in PACK_POOL if p.key == key)
+
+
+def _offer_to_dict(item):
+    if hasattr(item, "timing"):
+        return {"type": "joker", "key": item.key}
+    kind = getattr(item, "kind", None)
+    if kind == "voucher":
+        return {"type": "voucher", "key": item.key}
+    if kind == "pack":
+        return {"type": "pack", "key": item.key}
+    return {"type": "consumable", "key": item.key}
+
+
+def _offer_from_dict(data):
+    kind = data["type"]
+    if kind == "joker":
+        return _joker_by_key(data["key"])
+    if kind == "voucher":
+        return _voucher_by_key(data["key"])
+    if kind == "pack":
+        return _pack_by_key(data["key"])
+    return _consumable_by_key(data["key"])
 
 
 class GameState:
@@ -76,6 +117,7 @@ class GameState:
         self.sort_mode = "rank"
         self.shop_offers = []
         self.shop_message = ""
+        self.pending_pack = None
         self._start_blind_round()
 
     @property
@@ -129,22 +171,38 @@ class GameState:
         mult_multiplier = 1.0
         destroyed = []
         for c in scoring_cards:
+            card_chip = 0
+            card_mult_add = 0
+            card_mult_mul = 1.0
             if not (effect and effect.debuff_suit and c.suit is effect.debuff_suit):
-                chip_sum += c.rank.chips
+                card_chip += c.rank.chips
             if c.enhancement == "bonus":
-                chip_sum += 30
+                card_chip += 30
             elif c.enhancement == "mult":
-                mult_bonus += 4
+                card_mult_add += 4
             elif c.enhancement == "glass":
-                mult_multiplier *= 2
+                card_mult_mul *= 2
                 if self.rng.random() < GLASS_BREAK_CHANCE:
                     destroyed.append(c)
             if c.edition == "foil":
-                chip_sum += 50
+                card_chip += 50
             elif c.edition == "holographic":
-                mult_bonus += 10
+                card_mult_add += 10
             elif c.edition == "polychrome":
-                mult_multiplier *= 1.5
+                card_mult_mul *= 1.5
+
+            if c.seal == "red":
+                card_chip *= 2
+                card_mult_add *= 2
+                card_mult_mul *= card_mult_mul
+
+            chip_sum += card_chip
+            mult_bonus += card_mult_add
+            mult_multiplier *= card_mult_mul
+
+        gold_income = sum(GOLD_SEAL_INCOME for c in cards if c.seal == "gold")
+        if gold_income:
+            self.money += gold_income
 
         base_chips = hand_type.base_chips + level * level_chips + chip_sum
         base_mult = hand_type.base_mult + level * level_mult + mult_bonus
@@ -188,6 +246,9 @@ class GameState:
         for i in sorted(indices, reverse=True):
             del self.hand[i]
         self.deck.discard(cards)
+        for c in cards:
+            if c.seal == "blue" and len(self.consumables) < MAX_CONSUMABLE_SLOTS:
+                self.consumables.append(self.rng.choice(CONSUMABLE_POOL))
         self.hand.extend(self.deck.draw(len(indices)))
         self.sort_hand(self.sort_mode)
         self.discards_left -= 1
@@ -244,8 +305,12 @@ class GameState:
         self._roll_shop_offers()
 
     def _roll_shop_offers(self):
-        pool = list(JOKER_POOL) + list(CONSUMABLE_POOL)
-        weights = [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL] + [CONSUMABLE_SHOP_WEIGHT] * len(CONSUMABLE_POOL)
+        pool = list(JOKER_POOL) + list(CONSUMABLE_POOL) + list(PACK_POOL)
+        weights = (
+            [RARITY_WEIGHT[j.rarity] for j in JOKER_POOL]
+            + [CONSUMABLE_SHOP_WEIGHT] * len(CONSUMABLE_POOL)
+            + [PACK_SHOP_WEIGHT] * len(PACK_POOL)
+        )
         k = min(self.shop_offer_count, len(pool))
         self.shop_offers = _weighted_unique_sample(self.rng, pool, weights, k)
         voucher_candidates = [v for v in VOUCHER_POOL if v.key not in self.owned_vouchers]
@@ -282,6 +347,15 @@ class GameState:
             self.shop_message = f"'{item.name}' 획득 완료! (영구 효과)"
             return
 
+        if kind == "pack":
+            if self.money < cost:
+                self.shop_message = "돈이 부족합니다."
+                return
+            self.money -= cost
+            del self.shop_offers[offer_index]
+            self._open_pack(item)
+            return
+
         is_joker = hasattr(item, "timing")
         if is_joker and len(self.jokers) >= MAX_JOKER_SLOTS:
             self.shop_message = "조커 슬롯이 가득 찼습니다."
@@ -301,6 +375,54 @@ class GameState:
         del self.shop_offers[offer_index]
         self.shop_message = f"'{item.name}' 구매 완료!"
 
+    def _open_pack(self, pack):
+        if pack.pack_type == "joker":
+            source_pool = JOKER_POOL
+            weights = [RARITY_WEIGHT[j.rarity] for j in source_pool]
+        else:
+            source_pool = CONSUMABLE_POOL
+            weights = [1] * len(source_pool)
+        items = _weighted_unique_sample(self.rng, source_pool, weights, pack.show_count)
+        self.pending_pack = {
+            "pack_type": pack.pack_type,
+            "items": items,
+            "remaining": pack.pick_count,
+        }
+        self.phase = "pack"
+        self.shop_message = ""
+
+    def pick_pack_item(self, index):
+        if self.phase != "pack" or not self.pending_pack:
+            return "지금은 선택할 수 없습니다."
+        items = self.pending_pack["items"]
+        if index < 0 or index >= len(items):
+            return "잘못된 번호입니다."
+        item = items[index]
+        pack_type = self.pending_pack["pack_type"]
+        if pack_type == "joker" and len(self.jokers) >= MAX_JOKER_SLOTS:
+            return "조커 슬롯이 가득 찼습니다."
+        if pack_type == "consumable" and len(self.consumables) >= MAX_CONSUMABLE_SLOTS:
+            return "소모품 슬롯이 가득 찼습니다."
+
+        del items[index]
+        if pack_type == "joker":
+            self.jokers.append(item)
+        else:
+            self.consumables.append(item)
+        self.pending_pack["remaining"] -= 1
+        message = f"'{item.name}' 획득!"
+        if self.pending_pack["remaining"] <= 0 or not items:
+            self.phase = "shop"
+            self.pending_pack = None
+        return message
+
+    def skip_pack(self):
+        if self.phase != "pack":
+            return "지금은 스킵할 수 없습니다."
+        self.phase = "shop"
+        self.pending_pack = None
+        return "나머지 선택을 건너뛰었습니다."
+
     def continue_from_shop(self):
         if self.blind_index + 1 < len(self.blinds):
             self.blind_index += 1
@@ -315,3 +437,83 @@ class GameState:
 
     def is_run_over(self):
         return self.phase in ("game_over", "victory")
+
+    def to_dict(self):
+        version, internal_state, gauss_next = self.rng.getstate()
+        return {
+            "seed": self.seed,
+            "rng_state": [version, list(internal_state), gauss_next],
+            "ante": self.ante,
+            "blind_index": self.blind_index,
+            "money": self.money,
+            "jokers": [j.key for j in self.jokers],
+            "consumables": [c.key for c in self.consumables],
+            "hand_levels": {ht.name: lv for ht, lv in self.hand_levels.items()},
+            "owned_vouchers": list(self.owned_vouchers),
+            "base_hand_size": self.base_hand_size,
+            "base_plays": self.base_plays,
+            "base_discards": self.base_discards,
+            "shop_offer_count": self.shop_offer_count,
+            "shop_discount": self.shop_discount,
+            "interest_cap": self.interest_cap,
+            "hand": [card_to_dict(c) for c in self.hand],
+            "hand_size": self.hand_size,
+            "round_score": self.round_score,
+            "plays_left": self.plays_left,
+            "discards_left": self.discards_left,
+            "next_play_mult_multiplier": self.next_play_mult_multiplier,
+            "mist_active": self.mist_active,
+            "echo_mult_bonus": self.echo_mult_bonus,
+            "phase": self.phase,
+            "last_reward": self.last_reward,
+            "last_interest": self.last_interest,
+            "sort_mode": self.sort_mode,
+            "deck_cards": [card_to_dict(c) for c in self.deck.cards],
+            "deck_discard_pile": [card_to_dict(c) for c in self.deck.discard_pile],
+            "shop_offers": [_offer_to_dict(item) for item in self.shop_offers],
+            "shop_message": self.shop_message,
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        game = cls.__new__(cls)
+        version, internal_state, gauss_next = data["rng_state"]
+        game.rng = random.Random()
+        game.rng.setstate((version, tuple(internal_state), gauss_next))
+        game.seed = data["seed"]
+        game.deck = Deck(game.rng)
+        game.deck.cards = [card_from_dict(d) for d in data["deck_cards"]]
+        game.deck.discard_pile = [card_from_dict(d) for d in data["deck_discard_pile"]]
+        game.ante = data["ante"]
+        game.blinds = make_blinds(game.ante)
+        game.blind_index = data["blind_index"]
+        game.money = data["money"]
+        game.jokers = [_joker_by_key(k) for k in data["jokers"]]
+        game.consumables = [_consumable_by_key(k) for k in data["consumables"]]
+        game.hand_levels = {HandType[name]: lv for name, lv in data["hand_levels"].items()}
+        game.owned_vouchers = set(data["owned_vouchers"])
+        game.base_hand_size = data["base_hand_size"]
+        game.base_plays = data["base_plays"]
+        game.base_discards = data["base_discards"]
+        game.shop_offer_count = data["shop_offer_count"]
+        game.shop_discount = data["shop_discount"]
+        game.interest_cap = data["interest_cap"]
+        game.hand = [card_from_dict(d) for d in data["hand"]]
+        game.hand_size = data["hand_size"]
+        game.round_score = data["round_score"]
+        game.plays_left = data["plays_left"]
+        game.discards_left = data["discards_left"]
+        game.next_play_mult_multiplier = data["next_play_mult_multiplier"]
+        game.mist_active = data["mist_active"]
+        game.echo_mult_bonus = data["echo_mult_bonus"]
+        game._round_started_fresh = False
+        game.phase = data["phase"]
+        game.last_result = None
+        game.last_reward = data["last_reward"]
+        game.last_interest = data["last_interest"]
+        game.last_tag_message = None
+        game.sort_mode = data["sort_mode"]
+        game.shop_offers = [_offer_from_dict(d) for d in data["shop_offers"]]
+        game.shop_message = data["shop_message"]
+        game.pending_pack = None
+        return game

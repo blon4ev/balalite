@@ -49,6 +49,12 @@ EDITION_LABELS = {
     "polychrome": "폴리크롬",
 }
 
+SEAL_LABELS = {
+    "red": "적색",
+    "gold": "금색",
+    "blue": "청색",
+}
+
 
 @dataclass
 class Card:
@@ -56,9 +62,30 @@ class Card:
     suit: Suit
     enhancement: Optional[str] = None
     edition: Optional[str] = None
+    seal: Optional[str] = None
 
     def __str__(self):
         return f"{self.rank.label}{self.suit.symbol}"
+
+
+def card_to_dict(card):
+    return {
+        "rank": card.rank.name,
+        "suit": card.suit.name,
+        "enhancement": card.enhancement,
+        "edition": card.edition,
+        "seal": card.seal,
+    }
+
+
+def card_from_dict(data):
+    return Card(
+        Rank[data["rank"]],
+        Suit[data["suit"]],
+        enhancement=data.get("enhancement"),
+        edition=data.get("edition"),
+        seal=data.get("seal"),
+    )
 
 
 class Deck:

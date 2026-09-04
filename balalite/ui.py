@@ -44,6 +44,11 @@ RARITY_COLOR = {
     "rare": BLUE,
     "legendary": YELLOW,
 }
+SEAL_DOT_COLOR = {
+    "red": RED,
+    "gold": YELLOW,
+    "blue": BLUE,
+}
 
 
 def clear_screen():
@@ -52,7 +57,11 @@ def clear_screen():
 
 def colorize_card(card):
     color = RED if card.suit in (Suit.HEARTS, Suit.DIAMONDS) else WHITE
-    text = f"{color}[{card.rank.label}{card.suit.symbol}]{RESET}"
+    prefix = ""
+    if card.seal:
+        seal_color = SEAL_DOT_COLOR.get(card.seal, WHITE)
+        prefix = f"{seal_color}●{RESET}"
+    text = f"{prefix}{color}[{card.rank.label}{card.suit.symbol}]{RESET}"
     if card.enhancement:
         tag_color = ENHANCEMENT_TAG_COLOR.get(card.enhancement, WHITE)
         letter = ENHANCEMENT_TAG_LETTER.get(card.enhancement, "?")
@@ -107,7 +116,7 @@ def render_hand_prompt(game):
     hints = ["p 1 2 3 (플레이)", "d 1 2 (버리기)", "u 1 [카드번호] (소모품 사용)", "x 1 (조커 판매)"]
     if game.can_skip_blind():
         hints.append("skip (블라인드 스킵)")
-    hints += ["s (정렬)", "j (보유 정보)", "h (도움말)", "q (그만두기)"]
+    hints += ["s (정렬)", "j (보유 정보)", "save (저장 후 종료)", "h (도움말)", "q (그만두기)"]
     print(f"{DIM}" + " | ".join(hints) + f"{RESET}")
 
 
@@ -115,6 +124,7 @@ OFFER_KIND_LABELS = {
     "rune": "룬",
     "enhancer": "강화석",
     "editioner": "에디션석",
+    "sealer": "인장석",
     "spectral": "스펙트럴",
     "charm": "부적",
 }
@@ -124,9 +134,12 @@ def _offer_kind_tag(item):
     if hasattr(item, "timing"):
         rarity_color = RARITY_COLOR.get(item.rarity, WHITE)
         return f"조커·{rarity_color}{RARITY_LABEL.get(item.rarity, item.rarity)}{RESET}"
-    if getattr(item, "kind", None) == "voucher":
+    kind = getattr(item, "kind", None)
+    if kind == "voucher":
         return "바우처"
-    return OFFER_KIND_LABELS.get(item.kind, item.kind)
+    if kind == "pack":
+        return "부스터 팩"
+    return OFFER_KIND_LABELS.get(kind, kind)
 
 
 def _offer_line(i, item, game):
@@ -157,8 +170,23 @@ def render_shop(game):
         print(f"{MAGENTA}{game.shop_message}{RESET}")
     print(
         f"{DIM}b 1 (구매) | r (리롤, ${SHOP_REROLL_COST}) | x 1 (조커 판매) | c (다음 블라인드로) | "
-        f"j (보유 정보) | h (도움말) | q (그만두기){RESET}"
+        f"j (보유 정보) | save (저장 후 종료) | h (도움말) | q (그만두기){RESET}"
     )
+
+
+def render_pack(game):
+    pack = game.pending_pack
+    print(f"{BOLD}{CYAN}=== 팩 개봉 ==={RESET}")
+    pack_type_label = "조커" if pack["pack_type"] == "joker" else "소모품"
+    print(f"{pack_type_label} 중 {pack['remaining']}개를 선택하세요.")
+    print()
+    for i, item in enumerate(pack["items"]):
+        kind_tag = _offer_kind_tag(item)
+        print(f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}")
+    print()
+    if game.shop_message:
+        print(f"{MAGENTA}{game.shop_message}{RESET}")
+    print(f"{DIM}pick 1 (선택) | skip (남은 선택 포기) | h (도움말) | q (그만두기){RESET}")
 
 
 def blind_clear_line(game):
@@ -207,17 +235,23 @@ def render_help(phase):
     if phase == "blind":
         print(" p <번호...>  선택한 1~5장을 플레이해 점수를 냅니다 (예: p 1 3 5)")
         print(" d <번호...>  선택한 카드를 버리고 새로 뽑습니다 (예: d 2 4)")
-        print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석/에디션석/'파괴' 스펙트럴은 대상 카드 번호가 필요합니다 (예: u 1 3)")
+        print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석/에디션석/인장석/'파괴' 스펙트럴은 대상 카드 번호가 필요합니다 (예: u 1 3)")
         print(" skip         (스몰/빅 블라인드에서, 아직 아무 행동도 하지 않았을 때) 블라인드를 스킵하고 태그를 얻습니다")
         print(" s            손패 정렬 방식을 랭크/무늬로 전환합니다")
-    else:
+        print(" save         현재 진행 상황을 저장하고 게임을 종료합니다 (다음 실행 시 이어하기)")
+        print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")
+    elif phase == "shop":
         print(" b <번호>     상점에서 해당 번호의 상품을 구매합니다 (예: b 1)")
         print(f" r            상점을 새로고침합니다 (${SHOP_REROLL_COST})")
         print(" c            다음 블라인드로 진행합니다")
-    print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")
+        print(" save         현재 진행 상황을 저장하고 게임을 종료합니다 (다음 실행 시 이어하기)")
+        print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")
+    elif phase == "pack":
+        print(" pick <번호>  개봉한 팩에서 해당 번호의 상품을 선택합니다")
+        print(" skip         남은 선택을 포기하고 상점으로 돌아갑니다")
     print(" j            보유 조커/소모품/바우처/족보 강화 정보를 확인합니다")
     print(" h            이 도움말을 다시 봅니다")
-    print(" q            게임을 종료합니다")
+    print(" q            게임을 종료합니다 (저장하지 않음)")
     print()
 
 
