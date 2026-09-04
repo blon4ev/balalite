@@ -1,7 +1,9 @@
 from .blinds import MAX_ANTE
 from .cards import Suit
+from .consumables import LEVEL_BONUS
 from .game import MAX_CONSUMABLE_SLOTS, MAX_JOKER_SLOTS, SHOP_REROLL_COST
 from .jokers import RARITY_LABEL
+from .scoring import HandType
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -55,6 +57,10 @@ def clear_screen():
     print("\033[2J\033[H", end="")
 
 
+def _rule(width=60):
+    print(f"{DIM}{'─' * width}{RESET}")
+
+
 def colorize_card(card):
     color = RED if card.suit in (Suit.HEARTS, Suit.DIAMONDS) else WHITE
     prefix = ""
@@ -78,6 +84,38 @@ def render_hand(hand):
     print(" ".join(parts))
 
 
+def render_legend():
+    print(
+        f"{DIM}표시 범례 — 강화: {ENHANCEMENT_TAG_COLOR['bonus']}B{RESET}{DIM}보너스+30칩 "
+        f"{ENHANCEMENT_TAG_COLOR['mult']}M{RESET}{DIM}멀티+4배수 "
+        f"{ENHANCEMENT_TAG_COLOR['wild']}W{RESET}{DIM}와일드무늬 "
+        f"{ENHANCEMENT_TAG_COLOR['glass']}G{RESET}{DIM}유리x2(파괴위험) | 에디션: "
+        f"{EDITION_TAG_COLOR['foil']}F{RESET}{DIM}포일+50칩 "
+        f"{EDITION_TAG_COLOR['holographic']}H{RESET}{DIM}홀로+10배수 "
+        f"{EDITION_TAG_COLOR['polychrome']}P{RESET}{DIM}폴리x1.5 | 씰: "
+        f"{SEAL_DOT_COLOR['red']}●{RESET}{DIM}적(레트리거) "
+        f"{SEAL_DOT_COLOR['gold']}●{RESET}{DIM}금(+$3) "
+        f"{SEAL_DOT_COLOR['blue']}●{RESET}{DIM}청(소모품) — 자세한 설명은 rank 명령{RESET}"
+    )
+
+
+def render_hand_guide(game):
+    print(f"{BOLD}{CYAN}=== 족보표 (약한 순 → 강한 순) ==={RESET}")
+    for ht in HandType:
+        level = game.hand_levels.get(ht, 0)
+        line = f" {BOLD}{ht.label}{RESET} — 기본 {ht.base_chips}칩 × {ht.base_mult}배"
+        if level > 0:
+            level_chips, level_mult = LEVEL_BONUS.get(ht, (0, 0))
+            cur_chips = ht.base_chips + level * level_chips
+            cur_mult = ht.base_mult + level * level_mult
+            line += f"  {GREEN}(Lv.{level} 룬 적용 → {cur_chips}칩 × {cur_mult}배){RESET}"
+        print(line)
+    print()
+    print(f"{DIM}점수 = (기본 칩 + 카드 자체 값 + 강화/에디션/조커 보너스) × (기본 배수 + 보너스){RESET}")
+    print(f"{DIM}예: 페어(K,K) = 기본 10칩 + 10+10(카드값) = 30칩, 기본 2배 → 30 × 2 = 60점{RESET}")
+    print()
+
+
 def _progress_bar(value, target):
     ratio = min(1.0, value / target) if target else 1.0
     filled = int(ratio * BAR_WIDTH)
@@ -89,6 +127,7 @@ def _progress_bar(value, target):
 def render_status(game):
     blind = game.current_blind
     print(f"{BOLD}{CYAN}=== BALALITE — Balatro 팬게임 (비공식) ==={RESET}")
+    _rule()
     print(f"Ante {game.ante}/{MAX_ANTE}  {BOLD}{blind.label}{RESET}  목표 점수: {YELLOW}{blind.requirement}{RESET}")
     if game.boss_effect:
         print(f"{RED}보스 효과: {game.boss_effect.description}{RESET}")
@@ -101,22 +140,32 @@ def render_status(game):
     print(f"소모품 ({len(game.consumables)}/{MAX_CONSUMABLE_SLOTS}): {consumable_str}")
     if game.last_result:
         hand_type, chips, mult, gained, destroyed = game.last_result
-        print(f"{MAGENTA}지난 플레이: {hand_type.label}  {int(chips)} 칩 x {mult:g} 배 = {gained}점{RESET}")
+        remaining = max(0, blind.requirement - game.round_score)
+        print(
+            f"{MAGENTA}{BOLD}▶ {hand_type.label}{RESET}{MAGENTA}   {int(chips)}칩 × {mult:g}배 = "
+            f"{RESET}{GREEN}{BOLD}+{gained}점{RESET}"
+        )
+        if remaining > 0:
+            print(f"{DIM}   (목표까지 남은 점수: {remaining}){RESET}")
+        else:
+            print(f"{GREEN}{BOLD}   목표 달성! 곧 블라인드가 클리어됩니다.{RESET}")
         if destroyed:
             names = ", ".join(str(c) for c in destroyed)
-            print(f"{BLUE}유리 카드 파괴됨: {names}{RESET}")
+            print(f"{BLUE}   유리 카드 파괴됨: {names}{RESET}")
     if game.last_tag_message:
         print(f"{CYAN}{game.last_tag_message}{RESET}")
-    print()
+    _rule()
 
 
 def render_hand_prompt(game):
+    print()
     render_hand(game.hand)
+    render_legend()
     print()
     hints = ["p 1 2 3 (플레이)", "d 1 2 (버리기)", "u 1 [카드번호] (소모품 사용)", "x 1 (조커 판매)"]
     if game.can_skip_blind():
         hints.append("skip (블라인드 스킵)")
-    hints += ["s (정렬)", "j (보유 정보)", "save (저장 후 종료)", "h (도움말)", "q (그만두기)"]
+    hints += ["s (정렬)", "rank (족보표)", "j (보유 정보)", "save (저장 후 종료)", "h (도움말)", "q (그만두기)"]
     print(f"{DIM}" + " | ".join(hints) + f"{RESET}")
 
 
@@ -153,6 +202,7 @@ def _offer_line(i, item, game):
 
 def render_shop(game):
     print(f"{BOLD}{CYAN}=== 상점 ==={RESET}")
+    _rule()
     print(f"{blind_clear_line(game)}")
     if game.last_interest:
         print(f"{GREEN}이자 수입: +${game.last_interest}{RESET}")
@@ -160,12 +210,12 @@ def render_shop(game):
         f"보유 금액: {GREEN}${game.money}{RESET}   조커 슬롯: {len(game.jokers)}/{MAX_JOKER_SLOTS}   "
         f"소모품 슬롯: {len(game.consumables)}/{MAX_CONSUMABLE_SLOTS}"
     )
-    print()
+    _rule()
     if not game.shop_offers:
         print("(더 이상 살 수 있는 상품이 없습니다)")
     for i, item in enumerate(game.shop_offers):
         print(_offer_line(i, item, game))
-    print()
+    _rule()
     if game.shop_message:
         print(f"{MAGENTA}{game.shop_message}{RESET}")
     print(
@@ -177,13 +227,14 @@ def render_shop(game):
 def render_pack(game):
     pack = game.pending_pack
     print(f"{BOLD}{CYAN}=== 팩 개봉 ==={RESET}")
+    _rule()
     pack_type_label = "조커" if pack["pack_type"] == "joker" else "소모품"
     print(f"{pack_type_label} 중 {pack['remaining']}개를 선택하세요.")
     print()
     for i, item in enumerate(pack["items"]):
         kind_tag = _offer_kind_tag(item)
         print(f" {i + 1}: {BOLD}{item.name}{RESET} [{kind_tag}] — {item.description}")
-    print()
+    _rule()
     if game.shop_message:
         print(f"{MAGENTA}{game.shop_message}{RESET}")
     print(f"{DIM}pick 1 (선택) | skip (남은 선택 포기) | h (도움말) | q (그만두기){RESET}")
@@ -238,6 +289,7 @@ def render_help(phase):
         print(" u <번호> [카드번호]  소모품을 사용합니다. 강화석/에디션석/인장석/'파괴' 스펙트럴은 대상 카드 번호가 필요합니다 (예: u 1 3)")
         print(" skip         (스몰/빅 블라인드에서, 아직 아무 행동도 하지 않았을 때) 블라인드를 스킵하고 태그를 얻습니다")
         print(" s            손패 정렬 방식을 랭크/무늬로 전환합니다")
+        print(" rank         족보표(하이 카드~스트레이트 플러시 기본 점수)를 확인합니다")
         print(" save         현재 진행 상황을 저장하고 게임을 종료합니다 (다음 실행 시 이어하기)")
         print(" x <번호>     보유한 조커를 판매합니다 (구매가의 절반 환불, 예: x 1)")
     elif phase == "shop":

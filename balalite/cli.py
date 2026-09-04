@@ -77,6 +77,9 @@ def _handle_blind_command(game, cmd, args):
         _pause()
     elif cmd in ("s", "sort"):
         game.sort_hand("suit" if game.sort_mode == "rank" else "rank")
+    elif cmd in ("rank", "ranks", "guide"):
+        ui.render_hand_guide(game)
+        _pause()
     elif cmd in ("save",):
         _save_and_quit(game)
     elif cmd in ("j", "jokers", "inventory"):
